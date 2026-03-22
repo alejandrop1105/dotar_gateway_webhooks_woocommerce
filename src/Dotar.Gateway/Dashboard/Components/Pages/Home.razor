@@ -1,0 +1,97 @@
+@page "/"
+@using Dotar.Gateway.Infrastructure.Data
+@using Dotar.Gateway.Infrastructure.Services
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject RedisQueueService Queue
+
+<h1>📊 Dashboard</h1>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">@_totalTenants</div>
+        <div class="stat-label">Tenants Activos</div>
+    </div>
+    <div class="stat-card accent">
+        <div class="stat-value">@_pendingQueue</div>
+        <div class="stat-label">En Cola</div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-value">@_deliveredToday</div>
+        <div class="stat-label">Entregados Hoy</div>
+    </div>
+    <div class="stat-card danger">
+        <div class="stat-value">@_failedToday</div>
+        <div class="stat-label">Fallidos Hoy</div>
+    </div>
+</div>
+
+<h2 style="margin-top: 2rem;">📋 Actividad Reciente</h2>
+
+@if (_recentLogs.Any())
+{
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Tenant</th>
+                    <th>Status</th>
+                    <th>Intentos</th>
+                    <th>Duración</th>
+                    <th>Fecha</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in _recentLogs)
+                {
+                    <tr>
+                        <td>@log.Tenant.Name</td>
+                        <td><span class="badge @GetBadgeClass(log.HttpStatusCode)">@log.HttpStatusCode</span></td>
+                        <td>@log.AttemptNumber</td>
+                        <td>@log.DurationMs ms</td>
+                        <td>@log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <p class="empty-state">Sin actividad reciente.</p>
+}
+
+@code {
+    private int _totalTenants;
+    private long _pendingQueue;
+    private int _deliveredToday;
+    private int _failedToday;
+    private List<Dotar.Gateway.Domain.Entities.DeliveryLog> _recentLogs = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var today = DateTime.UtcNow.Date;
+
+        _totalTenants = await db.Tenants.CountAsync(t => t.IsActive);
+        _pendingQueue = await Queue.GetPendingCountAsync();
+        _deliveredToday = await db.DeliveryLogs
+            .CountAsync(l => l.CreatedAt >= today && l.HttpStatusCode >= 200 && l.HttpStatusCode < 300);
+        _failedToday = await db.DeliveryLogs
+            .CountAsync(l => l.CreatedAt >= today && (l.HttpStatusCode >= 400 || l.HttpStatusCode == 0));
+        _recentLogs = await db.DeliveryLogs
+            .Include(l => l.Tenant)
+            .OrderByDescending(l => l.CreatedAt)
+            .Take(10)
+            .ToListAsync();
+    }
+
+    private string GetBadgeClass(int? statusCode) => statusCode switch
+    {
+        >= 200 and < 300 => "badge-success",
+        >= 300 and < 400 => "badge-warning",
+        >= 400 or 0 => "badge-danger",
+        _ => "badge-secondary"
+    };
+}

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Dotar.Gateway</RootNamespace>
+    <!-- Static assets desde Dashboard/wwwroot -->
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Entity Framework Core + SQLite -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.3">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.3" />
+    <!-- Redis -->
+    <PackageReference Include="StackExchange.Redis" Version="2.8.41" />
+    <!-- Caching -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.5" />
+    <!-- Polly v8 (resilience) -->
+    <PackageReference Include="Polly.Core" Version="8.5.2" />
+  </ItemGroup>
+
+  <!-- Mapear Dashboard/wwwroot como web root -->
+  <ItemGroup>
+    <Content Update="Dashboard\wwwroot\**" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

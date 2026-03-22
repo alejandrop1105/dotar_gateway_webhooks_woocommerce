@@ -1,0 +1,221 @@
+@page "/grupos"
+@page "/grupos/create"
+@page "/grupos/{Id:int}/edit"
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Navigation
+
+<h1>📁 @(_isEditing ? "Editar Grupo" : _isCreating ? "Nuevo Grupo" : "Grupos de Tenants")</h1>
+
+@if (_isCreating || _isEditing)
+{
+    <div class="form-card">
+        <div class="form-group">
+            <label>Nombre del Grupo</label>
+            <input @bind="_form.Name" class="form-input" placeholder="Cliente 1" />
+        </div>
+        <div class="form-group">
+            <label>Política de Reintento <small>(se hereda a los tenants sin política propia)</small></label>
+            <select @bind="_form.RetryPolicyId" class="form-input">
+                <option value="0">— Usar política por defecto del sistema —</option>
+                @foreach (var p in _policies)
+                {
+                    <option value="@p.Id">@p.Name (@(p.Steps.Count) pasos)</option>
+                }
+            </select>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" @onclick="SaveGroup">💾 Guardar</button>
+            <a href="/grupos" class="btn btn-secondary">Cancelar</a>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger">@_errorMessage</div>
+        }
+    </div>
+}
+else
+{
+    <div style="margin-bottom: 1rem;">
+        <a href="/grupos/create" class="btn btn-primary">➕ Nuevo Grupo</a>
+    </div>
+
+    @if (_groups.Any())
+    {
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Política</th>
+                        <th>Tenants</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in _groups)
+                    {
+                        <tr>
+                            <td><strong>@g.Name</strong></td>
+                            <td>
+                                <span class="badge badge-secondary">
+                                    @(g.RetryPolicy?.Name ?? "Default del sistema")
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge badge-success">@g.Tenants.Count tenants</span>
+                            </td>
+                            <td class="actions-cell">
+                                <a href="/grupos/@g.Id/edit" class="btn btn-sm btn-secondary">✏️</a>
+                                @if (g.Tenants.Count == 0)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteGroup(g.Id)">🗑️</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <p class="empty-state">No hay grupos configurados. ¡Crea el primero para agrupar tus tenants!</p>
+    }
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<TenantGroup> _groups = [];
+    private List<RetryPolicy> _policies = [];
+    private GroupFormModel _form = new();
+    private string? _errorMessage;
+
+    private bool _isCreating => Navigation.Uri.EndsWith("/create", StringComparison.OrdinalIgnoreCase);
+    private bool _isEditing => Navigation.Uri.Contains("/edit", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await HandleRouteAsync();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        InvokeAsync(async () => { await HandleRouteAsync(); StateHasChanged(); });
+    }
+
+    private async Task HandleRouteAsync()
+    {
+        _errorMessage = null;
+
+        if (_isEditing)
+        {
+            var editId = ExtractIdFromUri();
+            if (editId.HasValue)
+            {
+                Id = editId;
+                await LoadGroupForEdit(editId.Value);
+            }
+        }
+        else if (_isCreating)
+        {
+            _form = new GroupFormModel();
+        }
+
+        await LoadData();
+    }
+
+    private int? ExtractIdFromUri()
+    {
+        var uri = Navigation.Uri;
+        var match = System.Text.RegularExpressions.Regex.Match(uri, @"/grupos/(\d+)/edit",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success && int.TryParse(match.Groups[1].Value, out var id) ? id : null;
+    }
+
+    private async Task LoadGroupForEdit(int groupId)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var group = await db.TenantGroups.FindAsync(groupId);
+        if (group is not null)
+        {
+            _form = new GroupFormModel
+            {
+                Name = group.Name,
+                RetryPolicyId = group.RetryPolicyId ?? 0
+            };
+        }
+    }
+
+    private async Task LoadData()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        _groups = await db.TenantGroups
+            .Include(g => g.RetryPolicy)
+            .Include(g => g.Tenants)
+            .OrderBy(g => g.Name)
+            .ToListAsync();
+        _policies = await db.RetryPolicies.Include(p => p.Steps).OrderBy(p => p.Name).ToListAsync();
+    }
+
+    private async Task SaveGroup()
+    {
+        _errorMessage = null;
+        if (string.IsNullOrWhiteSpace(_form.Name))
+        {
+            _errorMessage = "El nombre es obligatorio.";
+            return;
+        }
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        if (_isEditing && Id.HasValue)
+        {
+            var group = await db.TenantGroups.FindAsync(Id.Value);
+            if (group is null) return;
+            group.Name = _form.Name;
+            group.RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId;
+        }
+        else
+        {
+            db.TenantGroups.Add(new TenantGroup
+            {
+                Name = _form.Name,
+                RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await db.SaveChangesAsync();
+        Navigation.NavigateTo("/grupos");
+    }
+
+    private async Task DeleteGroup(int id)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var group = await db.TenantGroups.FindAsync(id);
+        if (group is not null)
+        {
+            db.TenantGroups.Remove(group);
+            await db.SaveChangesAsync();
+        }
+        await LoadData();
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+
+    private class GroupFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public int RetryPolicyId { get; set; }
+    }
+}

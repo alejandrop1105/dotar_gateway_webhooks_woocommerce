@@ -1,0 +1,331 @@
+@page "/politicas"
+@page "/politicas/create"
+@page "/politicas/{Id:int}/edit"
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Dotar.Gateway.Workers
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Navigation
+@inject WebhookDispatcherWorker Worker
+@implements IDisposable
+
+<h1>🔄 @(_isEditing ? "Editar Política" : _isCreating ? "Nueva Política" : "Políticas de Reintento")</h1>
+
+@if (_isCreating || _isEditing)
+{
+    <div class="form-card" style="max-width: 700px;">
+        <div class="form-group">
+            <label>Nombre de la Política</label>
+            <input @bind="_form.Name" class="form-input" placeholder="Agresiva, Conservadora, etc." />
+        </div>
+
+        <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">⏱️ Pasos de Reintento</h3>
+        <p class="config-description" style="margin-bottom: 1rem;">
+            Cada paso define cuánto esperar antes del siguiente intento.
+            Configurá desde segundos hasta días.
+        </p>
+
+        @for (int i = 0; i < _form.Steps.Count; i++)
+        {
+            var idx = i;
+            <div class="retry-step-row">
+                <span class="step-number">@(idx + 1)</span>
+                <span class="step-arrow">→ esperar</span>
+                <input @bind="_form.Steps[idx].DelayValue" type="number" min="1" max="999" class="form-input step-input" />
+                <select @bind="_form.Steps[idx].DelayUnit" class="form-input step-select">
+                    <option value="@DelayUnit.Seconds">segundos</option>
+                    <option value="@DelayUnit.Minutes">minutos</option>
+                    <option value="@DelayUnit.Hours">horas</option>
+                    <option value="@DelayUnit.Days">días</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-danger" @onclick="() => RemoveStep(idx)"
+                        title="Quitar paso">✕</button>
+            </div>
+        }
+
+        <button type="button" class="btn btn-sm btn-secondary" @onclick="AddStep" style="margin-top: 0.5rem;">
+            ➕ Agregar Paso
+        </button>
+
+        @if (_form.Steps.Any())
+        {
+            <div class="retry-preview">
+                <h3>📊 Vista previa — Timeline acumulada</h3>
+                <div class="timeline-preview">
+                    <div class="timeline-item">
+                        <span class="timeline-dot active"></span>
+                        <span class="timeline-label">Intento 1 — Inmediato</span>
+                    </div>
+                    @{
+                        var accumulated = TimeSpan.Zero;
+                    }
+                    @for (int i = 0; i < _form.Steps.Count; i++)
+                    {
+                        var step = _form.Steps[i];
+                        var delay = GetDelay(step);
+                        accumulated += delay;
+                        <div class="timeline-item">
+                            <span class="timeline-dot"></span>
+                            <span class="timeline-label">
+                                Intento @(i + 2) — a los @FormatTimeSpan(accumulated)
+                                <small>(espera @FormatStepDelay(step))</small>
+                            </span>
+                        </div>
+                    }
+                </div>
+                <div class="timeline-total">
+                    Tiempo total hasta agotar reintentos: <strong>@FormatTimeSpan(accumulated)</strong>
+                </div>
+            </div>
+        }
+
+        <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">🔌 Circuit Breaker</h3>
+        <div class="form-group">
+            <label>Umbral Mínimo <small>(requests antes de evaluar ratio de fallas)</small></label>
+            <input @bind="_form.CbThreshold" type="number" min="1" max="50" class="form-input" />
+        </div>
+        <div class="form-group">
+            <label>Duración Abierto (segundos)</label>
+            <input @bind="_form.CbDurationSec" type="number" min="5" max="300" class="form-input" />
+        </div>
+
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" @onclick="SavePolicy">💾 Guardar</button>
+            <a href="/politicas" class="btn btn-secondary">Cancelar</a>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger" style="margin-top: 1rem;">@_error</div>
+        }
+    </div>
+}
+else
+{
+    <div style="margin-bottom: 1rem;">
+        <a href="/politicas/create" class="btn btn-primary">➕ Nueva Política</a>
+    </div>
+
+    @if (_policies.Any())
+    {
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Pasos</th>
+                        <th>Timeline</th>
+                        <th>Tenants</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _policies)
+                    {
+                        var steps = p.Steps.OrderBy(s => s.StepNumber).ToList();
+                        <tr>
+                            <td>
+                                @p.Name
+                                @if (p.IsDefault)
+                                {
+                                    <span class="badge badge-success">Default</span>
+                                }
+                            </td>
+                            <td><span class="badge badge-secondary">@steps.Count pasos</span></td>
+                            <td class="url-cell">
+                                @string.Join(" → ", steps.Select(s => s.DisplayText))
+                            </td>
+                            <td><span class="badge badge-secondary">@p.Tenants.Count</span></td>
+                            <td class="actions-cell">
+                                <a href="/politicas/@p.Id/edit" class="btn btn-sm btn-secondary">✏️</a>
+                                @if (!p.IsDefault)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeletePolicy(p)">🗑️</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<RetryPolicy> _policies = [];
+    private PolicyFormModel _form = new();
+    private string? _error;
+
+    private bool _isCreating => Navigation.Uri.EndsWith("/create", StringComparison.OrdinalIgnoreCase);
+    private bool _isEditing => Navigation.Uri.Contains("/edit", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await HandleRouteAsync();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => InvokeAsync(async () => { await HandleRouteAsync(); StateHasChanged(); });
+
+    private async Task HandleRouteAsync()
+    {
+        _error = null;
+        if (_isEditing)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                Navigation.Uri, @"/politicas/(\d+)/edit",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var id))
+            {
+                Id = id;
+                await LoadPolicyForEdit(id);
+            }
+        }
+        else if (_isCreating)
+        {
+            _form = new PolicyFormModel();
+            _form.Steps.Add(new StepModel { DelayValue = 5, DelayUnit = DelayUnit.Seconds });
+            _form.Steps.Add(new StepModel { DelayValue = 30, DelayUnit = DelayUnit.Seconds });
+            _form.Steps.Add(new StepModel { DelayValue = 2, DelayUnit = DelayUnit.Minutes });
+        }
+        await LoadPolicies();
+    }
+
+    private async Task LoadPolicyForEdit(int policyId)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var p = await db.RetryPolicies.Include(x => x.Steps).FirstOrDefaultAsync(x => x.Id == policyId);
+        if (p is not null)
+        {
+            _form = new PolicyFormModel
+            {
+                Name = p.Name,
+                CbThreshold = p.CircuitBreakerThreshold,
+                CbDurationSec = p.CircuitBreakerDurationSeconds,
+                Steps = p.Steps.OrderBy(s => s.StepNumber)
+                    .Select(s => new StepModel { DelayValue = s.DelayValue, DelayUnit = s.DelayUnit })
+                    .ToList()
+            };
+        }
+    }
+
+    private async Task LoadPolicies()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        _policies = await db.RetryPolicies.Include(p => p.Steps).Include(p => p.Tenants)
+            .OrderBy(p => p.Name).ToListAsync();
+    }
+
+    private void AddStep() => _form.Steps.Add(new StepModel { DelayValue = 5, DelayUnit = DelayUnit.Seconds });
+    private void RemoveStep(int idx) { if (_form.Steps.Count > 0) _form.Steps.RemoveAt(idx); }
+
+    private async Task SavePolicy()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_form.Name)) { _error = "El nombre es obligatorio."; return; }
+        if (_form.Steps.Count == 0) { _error = "Debe tener al menos un paso de reintento."; return; }
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        if (_isEditing && Id.HasValue)
+        {
+            var p = await db.RetryPolicies.Include(x => x.Steps).FirstOrDefaultAsync(x => x.Id == Id.Value);
+            if (p is null) return;
+            p.Name = _form.Name;
+            p.CircuitBreakerThreshold = _form.CbThreshold;
+            p.CircuitBreakerDurationSeconds = _form.CbDurationSec;
+
+            // Reemplazar pasos
+            db.RetrySteps.RemoveRange(p.Steps);
+            for (int i = 0; i < _form.Steps.Count; i++)
+            {
+                p.Steps.Add(new RetryStep
+                {
+                    StepNumber = i + 1,
+                    DelayValue = _form.Steps[i].DelayValue,
+                    DelayUnit = _form.Steps[i].DelayUnit
+                });
+            }
+            Worker.InvalidatePipelineCache(p.Id);
+        }
+        else
+        {
+            var policy = new RetryPolicy
+            {
+                Name = _form.Name,
+                CircuitBreakerThreshold = _form.CbThreshold,
+                CircuitBreakerDurationSeconds = _form.CbDurationSec
+            };
+            for (int i = 0; i < _form.Steps.Count; i++)
+            {
+                policy.Steps.Add(new RetryStep
+                {
+                    StepNumber = i + 1,
+                    DelayValue = _form.Steps[i].DelayValue,
+                    DelayUnit = _form.Steps[i].DelayUnit
+                });
+            }
+            db.RetryPolicies.Add(policy);
+        }
+
+        await db.SaveChangesAsync();
+        Navigation.NavigateTo("/politicas");
+    }
+
+    private async Task DeletePolicy(RetryPolicy policy)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var p = await db.RetryPolicies.FindAsync(policy.Id);
+        if (p is not null) { db.RetryPolicies.Remove(p); await db.SaveChangesAsync(); }
+        Worker.InvalidatePipelineCache(policy.Id);
+        await LoadPolicies();
+    }
+
+    private static TimeSpan GetDelay(StepModel s) => s.DelayUnit switch
+    {
+        DelayUnit.Seconds => TimeSpan.FromSeconds(s.DelayValue),
+        DelayUnit.Minutes => TimeSpan.FromMinutes(s.DelayValue),
+        DelayUnit.Hours => TimeSpan.FromHours(s.DelayValue),
+        DelayUnit.Days => TimeSpan.FromDays(s.DelayValue),
+        _ => TimeSpan.FromSeconds(s.DelayValue)
+    };
+
+    private static string FormatStepDelay(StepModel s) => s.DelayUnit switch
+    {
+        DelayUnit.Seconds => $"{s.DelayValue}s",
+        DelayUnit.Minutes => $"{s.DelayValue}min",
+        DelayUnit.Hours => $"{s.DelayValue}h",
+        DelayUnit.Days => $"{s.DelayValue}d",
+        _ => $"{s.DelayValue}s"
+    };
+
+    private static string FormatTimeSpan(TimeSpan ts) => ts.TotalDays >= 1
+        ? $"{(int)ts.TotalDays}d {ts.Hours}h {ts.Minutes}min"
+        : ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h {ts.Minutes}min {ts.Seconds}s"
+        : ts.TotalMinutes >= 1 ? $"{(int)ts.TotalMinutes}min {ts.Seconds}s"
+        : $"{(int)ts.TotalSeconds}s";
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+
+    private class PolicyFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public int CbThreshold { get; set; } = 5;
+        public int CbDurationSec { get; set; } = 30;
+        public List<StepModel> Steps { get; set; } = [];
+    }
+
+    private class StepModel
+    {
+        public int DelayValue { get; set; } = 5;
+        public DelayUnit DelayUnit { get; set; } = DelayUnit.Seconds;
+    }
+}

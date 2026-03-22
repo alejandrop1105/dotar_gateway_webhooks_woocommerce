@@ -1,0 +1,320 @@
+@page "/tenants"
+@page "/tenants/create"
+@page "/tenants/{Id:int}/edit"
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Dotar.Gateway.Infrastructure.Services
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject TenantCacheService CacheService
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<h1>🏢 @(_isEditing ? "Editar Tenant" : _isCreating ? "Nuevo Tenant" : "Tenants")</h1>
+
+@if (_isCreating || _isEditing)
+{
+    <div class="form-card">
+        <div class="form-group">
+            <label>Nombre</label>
+            <input @bind="_form.Name" class="form-input" placeholder="Mi Tienda WooCommerce" />
+        </div>
+        <div class="form-group">
+            <label>Slug <small>(usado en la URL: /ingest/{slug})</small></label>
+            <input @bind="_form.Slug" class="form-input" placeholder="mi-tienda" />
+        </div>
+        <div class="form-group">
+            <label>Webhook Secret <small>(de WooCommerce)</small></label>
+            <input @bind="_form.WebhookSecret" class="form-input" type="password" />
+        </div>
+        <div class="form-group">
+            <label>URL de Destino</label>
+            <input @bind="_form.TargetUrl" class="form-input" placeholder="https://mi-sistema.com/api/webhooks" />
+        </div>
+        <div class="form-group">
+            <label>Grupo</label>
+            <select @bind="_form.TenantGroupId" class="form-input">
+                <option value="0">— Sin grupo —</option>
+                @foreach (var g in _groups)
+                {
+                    <option value="@g.Id">@g.Name</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Política de Reintento</label>
+            <select @bind="_form.RetryPolicyId" class="form-input">
+                <option value="0">— Usar política por defecto —</option>
+                @foreach (var p in _policies)
+                {
+                    <option value="@p.Id">@p.Name (@(p.Steps.Count) pasos)</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="_form.IsActive" />
+                Activo
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" @onclick="SaveTenant">💾 Guardar</button>
+            <a href="/tenants" class="btn btn-secondary">Cancelar</a>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger">@_errorMessage</div>
+        }
+    </div>
+}
+
+else
+{
+    <div style="margin-bottom: 1rem;">
+        <a href="/tenants/create" class="btn btn-primary">➕ Nuevo Tenant</a>
+    </div>
+
+    @if (_tenants.Any())
+    {
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Grupo</th>
+                        <th>Slug</th>
+                        <th>URL Destino</th>
+                        <th>Política</th>
+                        <th>Estado</th>
+                        <th>URL Ingesta</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _tenants)
+                    {
+                        <tr>
+                            <td>@t.Name</td>
+                            <td>
+                                <span class="badge badge-secondary">
+                                    @(t.TenantGroup?.Name ?? "—")
+                                </span>
+                            </td>
+                            <td><code>@t.Slug</code></td>
+                            <td class="url-cell">@t.TargetUrl</td>
+                            <td>
+                                <span class="badge badge-secondary">
+                                    @(t.RetryPolicy?.Name ?? "Default")
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge @(t.IsActive ? "badge-success" : "badge-danger")">
+                                    @(t.IsActive ? "Activo" : "Inactivo")
+                                </span>
+                            </td>
+                            <td class="url-cell"><code>/ingest/@t.Slug</code></td>
+                            <td class="actions-cell">
+                                <a href="/tenants/@t.Id/edit" class="btn btn-sm btn-secondary">✏️</a>
+                                <button class="btn btn-sm @(t.IsActive ? "btn-danger" : "btn-success")"
+                                        @onclick="() => ToggleActive(t)">
+                                    @(t.IsActive ? "⏸️" : "▶️")
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <p class="empty-state">No hay tenants configurados. ¡Crea el primero!</p>
+    }
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<Tenant> _tenants = [];
+    private List<RetryPolicy> _policies = [];
+    private List<TenantGroup> _groups = [];
+    private TenantFormModel _form = new();
+    private string? _errorMessage;
+
+    private bool _isCreating => Navigation.Uri.EndsWith("/create", StringComparison.OrdinalIgnoreCase);
+    private bool _isEditing => Navigation.Uri.Contains("/edit", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await HandleRouteAsync();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        InvokeAsync(async () =>
+        {
+            await HandleRouteAsync();
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>
+    /// Maneja la ruta actual: carga tenant para edit, resetea form para create, o carga lista.
+    /// </summary>
+    private async Task HandleRouteAsync()
+    {
+        _errorMessage = null;
+
+        if (_isEditing)
+        {
+            // Extraer ID desde la URL: /tenants/{id}/edit
+            var editId = ExtractIdFromUri();
+            if (editId.HasValue)
+            {
+                Id = editId;
+                await LoadTenantForEdit(editId.Value);
+            }
+        }
+        else if (_isCreating)
+        {
+            _form = new TenantFormModel();
+        }
+
+        await LoadTenants();
+    }
+
+    private int? ExtractIdFromUri()
+    {
+        var uri = Navigation.Uri;
+        var match = System.Text.RegularExpressions.Regex.Match(uri, @"/tenants/(\d+)/edit",
+System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success && int.TryParse(match.Groups[1].Value, out var id) ? id : null;
+    }
+
+    private async Task LoadTenantForEdit(int tenantId)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var tenant = await db.Tenants.FindAsync(tenantId);
+        if (tenant is not null)
+        {
+            _form = new TenantFormModel
+            {
+                Name = tenant.Name,
+                Slug = tenant.Slug,
+                WebhookSecret = tenant.WebhookSecret,
+                TargetUrl = tenant.TargetUrl,
+                IsActive = tenant.IsActive,
+                RetryPolicyId = tenant.RetryPolicyId ?? 0,
+                TenantGroupId = tenant.TenantGroupId ?? 0
+            };
+        }
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private async Task LoadTenants()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        _tenants = await db.Tenants
+            .Include(t => t.RetryPolicy)
+            .Include(t => t.TenantGroup)
+            .OrderBy(t => t.Name).ToListAsync();
+        _policies = await db.RetryPolicies.Include(p => p.Steps).OrderBy(p => p.Name).ToListAsync();
+        _groups = await db.TenantGroups.OrderBy(g => g.Name).ToListAsync();
+    }
+
+
+    private async Task SaveTenant()
+    {
+        _errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_form.Name) ||
+            string.IsNullOrWhiteSpace(_form.Slug) ||
+            string.IsNullOrWhiteSpace(_form.WebhookSecret) ||
+            string.IsNullOrWhiteSpace(_form.TargetUrl))
+        {
+            _errorMessage = "Todos los campos son obligatorios.";
+            return;
+        }
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        if (_isEditing && Id.HasValue)
+        {
+            var tenant = await db.Tenants.FindAsync(Id.Value);
+            if (tenant is null) return;
+
+            var oldSlug = tenant.Slug;
+            tenant.Name = _form.Name;
+            tenant.Slug = _form.Slug.ToLowerInvariant().Trim();
+            tenant.WebhookSecret = _form.WebhookSecret;
+            tenant.TargetUrl = _form.TargetUrl;
+            tenant.IsActive = _form.IsActive;
+            tenant.RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId;
+            tenant.TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId;
+            tenant.UpdatedAt = DateTime.UtcNow;
+
+            CacheService.Invalidate(oldSlug);
+            if (oldSlug != tenant.Slug)
+                CacheService.Invalidate(tenant.Slug);
+        }
+        else
+        {
+            var slug = _form.Slug.ToLowerInvariant().Trim();
+            if (await db.Tenants.AnyAsync(t => t.Slug == slug))
+            {
+                _errorMessage = $"El slug '{slug}' ya está en uso.";
+                return;
+            }
+
+            db.Tenants.Add(new Tenant
+            {
+                Name = _form.Name,
+                Slug = slug,
+                WebhookSecret = _form.WebhookSecret,
+                TargetUrl = _form.TargetUrl,
+                IsActive = _form.IsActive,
+                RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
+                TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await db.SaveChangesAsync();
+        Navigation.NavigateTo("/tenants");
+    }
+
+    private async Task ToggleActive(Tenant tenant)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var entity = await db.Tenants.FindAsync(tenant.Id);
+        if (entity is null) return;
+
+        entity.IsActive = !entity.IsActive;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        CacheService.Invalidate(entity.Slug);
+        await LoadTenants();
+    }
+
+    private class TenantFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Slug { get; set; } = string.Empty;
+        public string WebhookSecret { get; set; } = string.Empty;
+        public string TargetUrl { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+        public int RetryPolicyId { get; set; }
+        public int TenantGroupId { get; set; }
+    }
+}

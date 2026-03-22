@@ -1,0 +1,354 @@
+@page "/monitor"
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Dotar.Gateway.Infrastructure.Services
+@using Dotar.Gateway.Workers
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject RedisQueueService Queue
+@inject MonitorNotificationService MonitorNotify
+@inject WebhookDispatcherWorker Worker
+@implements IDisposable
+
+<h1>📡 Monitor de Entregas</h1>
+
+<div class="stats-grid" style="margin-bottom: 1.5rem;">
+    <div class="stat-card accent">
+        <div class="stat-value">@_pendingCount</div>
+        <div class="stat-label">En Cola Redis</div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-value">@_successCount</div>
+        <div class="stat-label">Exitosos</div>
+    </div>
+    <div class="stat-card danger">
+        <div class="stat-value">@_failedCount</div>
+        <div class="stat-label">Fallidos</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">@_successRate%</div>
+        <div class="stat-label">Tasa de Éxito</div>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <select @bind="_filterTenantId" class="form-input" style="max-width: 200px;">
+        <option value="0">Todos los tenants</option>
+        @foreach (var t in _tenants)
+        {
+            <option value="@t.Id">@t.Name</option>
+        }
+    </select>
+    <select @bind="_filterStatus" class="form-input" style="max-width: 160px;">
+        <option value="">Todos</option>
+        <option value="success">✅ Exitosos</option>
+        <option value="failed">❌ Fallidos</option>
+        <option value="manual">🔄 Reenvíos</option>
+    </select>
+    <button class="btn btn-primary" @onclick="LoadLogs">🔄 Actualizar</button>
+
+    @if (_selectedIds.Count > 0)
+    {
+        <button class="btn btn-danger" @onclick="DeleteSelected">
+            🗑️ Eliminar @_selectedIds.Count seleccionados
+        </button>
+    }
+
+    @if (_failedCount > 0 && _filterTenantId > 0)
+    {
+        <button class="btn btn-success" @onclick="RetryAllFailed" disabled="@_isRetrying">
+            @if (_isRetrying)
+            {
+                <span>⏳ Reenviando...</span>
+            }
+            else
+            {
+
+                <span>🔁 Reenviar Fallidos</span>
+            }
+        </button>
+    }
+
+    <span class="auto-refresh-badge">
+        <span class="tunnel-dot connected"></span> Auto-refresh activo
+    </span>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @_messageClass" style="margin-bottom: 1rem;">@_message</div>
+}
+
+@if (_logs.Any())
+{
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 32px;">
+                        <input type="checkbox" @onchange="ToggleSelectAll"
+                               checked="@(_selectedIds.Count == _logs.Count && _logs.Count > 0)" />
+                    </th>
+                    <th>ID</th>
+                    <th>Tenant</th>
+                    <th>Status</th>
+                    <th>HTTP</th>
+                    <th>Intentos</th>
+                    <th>Duración</th>
+                    <th>Error</th>
+                    <th>Fecha</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in _logs)
+                {
+                    <tr class="@(_selectedIds.Contains(log.Id) ? "row-selected" : "")">
+                        <td>
+                            <input type="checkbox" checked="@_selectedIds.Contains(log.Id)"
+                                   @onchange="() => ToggleSelect(log.Id)" />
+                        </td>
+                        <td>#@log.Id</td>
+                        <td>@log.Tenant.Name</td>
+                        <td>
+                            <span class="badge @GetStatusBadge(log.Status)">
+                                @GetStatusLabel(log.Status)
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge @GetBadgeClass(log.HttpStatusCode)">
+                                @(log.HttpStatusCode ?? 0)
+                            </span>
+                        </td>
+                        <td>@log.AttemptNumber</td>
+                        <td>@log.DurationMs ms</td>
+                        <td class="error-cell">@(log.ErrorMessage ?? "—")</td>
+                        <td>
+                            @log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")
+                            @if (log.Status == DeliveryStatus.Scheduled && log.NextRetryAt.HasValue)
+                            {
+                                <br/>
+                                <small style="color: var(--warning);">
+                                    ⏳ Reintento: @log.NextRetryAt.Value.ToLocalTime().ToString("HH:mm:ss")
+                                </small>
+                            }
+                        </td>
+                        <td class="actions-cell">
+                            <a href="/monitor/@log.Id" class="btn btn-sm btn-secondary" title="Ver detalle">👁️</a>
+                            @if ((log.Status == DeliveryStatus.Failed || log.Status == DeliveryStatus.Scheduled) &&
+                                                                                                                                                                !string.IsNullOrEmpty(log.Payload))
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => RetryManual(log.Id)"
+                                        title="Reenviar manualmente">
+                                    🔄
+                                </button>
+                            }
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteSingle(log.Id)" title="Eliminar">
+                                🗑️
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="pagination">
+        @if (_page > 1)
+        {
+            <button class="btn btn-secondary btn-sm" @onclick="PrevPage">← Anterior</button>
+        }
+        <span class="page-info">Página @_page</span>
+        @if (_logs.Count == _pageSize)
+        {
+            <button class="btn btn-secondary btn-sm" @onclick="NextPage">Siguiente →</button>
+        }
+    </div>
+}
+else
+{
+    <p class="empty-state">No hay logs de entrega con los filtros seleccionados.</p>
+}
+
+@code {
+    private List<DeliveryLog> _logs = [];
+    private List<Tenant> _tenants = [];
+    private int _filterTenantId;
+    private string _filterStatus = "";
+    private int _page = 1;
+    private const int _pageSize = 25;
+    private long _pendingCount;
+    private int _successCount;
+    private int _failedCount;
+    private int _successRate;
+    private bool _isRetrying;
+    private string? _message;
+    private string _messageClass = "alert-success";
+    private HashSet<long> _selectedIds = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Suscribirse a notificaciones de cambio del Worker
+        MonitorNotify.OnDeliveryChanged += OnDeliveryChanged;
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        _tenants = await db.Tenants.OrderBy(t => t.Name).ToListAsync();
+        await LoadLogs();
+    }
+
+    private async Task OnDeliveryChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadLogs();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadLogs()
+    {
+        _pendingCount = await Queue.GetPendingCountAsync();
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        var query = db.DeliveryLogs.Include(l => l.Tenant).AsQueryable();
+
+        if (_filterTenantId > 0)
+            query = query.Where(l => l.TenantId == _filterTenantId);
+
+        if (_filterStatus == "success")
+            query = query.Where(l => l.Status == DeliveryStatus.Success);
+        else if (_filterStatus == "failed")
+            query = query.Where(l => l.Status == DeliveryStatus.Failed);
+        else if (_filterStatus == "manual")
+            query = query.Where(l => l.Status == DeliveryStatus.ManualRetry);
+
+        var baseQuery = _filterTenantId > 0
+            ? db.DeliveryLogs.Where(l => l.TenantId == _filterTenantId)
+            : db.DeliveryLogs;
+
+        _successCount = await baseQuery.CountAsync(l => l.Status == DeliveryStatus.Success || l.Status ==
+DeliveryStatus.ManualRetry);
+        _failedCount = await baseQuery.CountAsync(l => l.Status == DeliveryStatus.Failed);
+        var total = _successCount + _failedCount;
+        _successRate = total > 0 ? (int)Math.Round(_successCount * 100.0 / total) : 100;
+
+        _logs = await query
+            .OrderByDescending(l => l.CreatedAt)
+            .Skip((_page - 1) * _pageSize)
+            .Take(_pageSize)
+            .ToListAsync();
+    }
+
+    private async Task RetryManual(long logId)
+    {
+        _message = null;
+        var result = await Worker.RetryManualAsync(logId);
+        if (result.IsSuccess)
+        {
+            _message = $"✅ Reenvío #{logId} exitoso (HTTP {result.StatusCode})";
+            _messageClass = "alert-success";
+        }
+        else
+        {
+            _message = $"❌ Reenvío #{logId} falló: {result.ErrorMessage}";
+            _messageClass = "alert-danger";
+        }
+        await LoadLogs();
+    }
+
+    private async Task RetryAllFailed()
+    {
+        _isRetrying = true;
+        _message = null;
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        var failedLogs = await db.DeliveryLogs
+            .Where(l => l.Status == DeliveryStatus.Failed && l.TenantId == _filterTenantId && l.Payload != null)
+            .OrderBy(l => l.CreatedAt)
+            .Take(50) // Limitar a 50 para no saturar
+            .Select(l => l.Id)
+            .ToListAsync();
+
+        int ok = 0, fail = 0;
+        foreach (var logId in failedLogs)
+        {
+            var result = await Worker.RetryManualAsync(logId);
+            if (result.IsSuccess) ok++; else fail++;
+        }
+
+        _message = $"🔁 Reenvío masivo: {ok} exitosos, {fail} fallidos de {failedLogs.Count} total";
+        _messageClass = fail == 0 ? "alert-success" : "alert-danger";
+        _isRetrying = false;
+        await LoadLogs();
+    }
+
+    private async Task PrevPage() { _page--; await LoadLogs(); }
+    private async Task NextPage() { _page++; await LoadLogs(); }
+
+    private string GetBadgeClass(int? statusCode) => statusCode switch
+    {
+        >= 200 and < 300 => "badge-success",
+        >= 300 and < 400 => "badge-warning",
+        _ => "badge-danger"
+    };
+
+    private string GetStatusBadge(DeliveryStatus status) => status switch
+    {
+        DeliveryStatus.Success => "badge-success",
+        DeliveryStatus.ManualRetry => "badge-success",
+        DeliveryStatus.Scheduled => "badge-warning",
+        _ => "badge-danger"
+    };
+
+    private string GetStatusLabel(DeliveryStatus status) => status switch
+    {
+        DeliveryStatus.Success => "✅ Éxito",
+        DeliveryStatus.ManualRetry => "🔄 Manual",
+        DeliveryStatus.Scheduled => "⏳ Programado",
+        _ => "❌ Fallido"
+    };
+
+    // ─── Selección ──────────────────────────────────
+    private void ToggleSelect(long id)
+    {
+        if (!_selectedIds.Remove(id)) _selectedIds.Add(id);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if (e.Value is true) _selectedIds = _logs.Select(l => l.Id).ToHashSet();
+        else _selectedIds.Clear();
+    }
+
+    // ─── Eliminación ────────────────────────────────
+    private async Task DeleteSelected()
+    {
+        if (_selectedIds.Count == 0) return;
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        await db.DeliveryLogs.Where(l => _selectedIds.Contains(l.Id)).ExecuteDeleteAsync();
+        _selectedIds.Clear();
+        _message = "Registros eliminados.";
+        _messageClass = "alert-success";
+        await LoadLogs();
+    }
+
+    private async Task DeleteSingle(long id)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        await db.DeliveryLogs.Where(l => l.Id == id).ExecuteDeleteAsync();
+        _selectedIds.Remove(id);
+        await LoadLogs();
+    }
+
+    public void Dispose()
+    {
+        MonitorNotify.OnDeliveryChanged -= OnDeliveryChanged;
+    }
+}

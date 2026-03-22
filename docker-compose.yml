@@ -1,0 +1,35 @@
+services:
+  gateway-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gateway-app
+    ports:
+      - "8082:5200"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      # Configuración para usar la DB persistente en Docker
+      - ConnectionStrings__Sqlite=Data Source=/app/data/gateway.db
+      # Conexión interna dentro de Docker Network hacia el servicio Redis
+      - ConnectionStrings__Redis=gateway-redis:6379
+      - TZ=America/Argentina/Buenos_Aires
+    volumes:
+      - gateway-app-data:/app/data
+    depends_on:
+      - gateway-redis
+    restart: unless-stopped
+
+  gateway-redis:
+    image: redis:7-alpine
+    container_name: gateway-redis
+    ports:
+      # Expuesto externamente al host en el 6380, pero el puerto interno de Redis siempre es 6379
+      - "6380:6379"
+    volumes:
+      - gateway-redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+volumes:
+  gateway-app-data:
+  gateway-redis-data:

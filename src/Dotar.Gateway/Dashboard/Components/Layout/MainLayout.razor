@@ -1,0 +1,64 @@
+@inherits LayoutComponentBase
+@using Dotar.Gateway.Infrastructure.Services
+@using Microsoft.JSInterop
+@inject TunnelStatusService TunnelStatus
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="app-container">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <span class="logo">⚡</span>
+            <h2>Dotar Gateway</h2>
+            <button class="sidebar-toggle-btn" onclick="sidebarHelper.toggle()" title="Ocultar menú">
+                <span class="hamburger-icon">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </span>
+            </button>
+        </div>
+        <NavMenu />
+    </aside>
+
+    <main class="main-content">
+        @* ─── Barra de estado del túnel ─── *@
+        <div class="tunnel-bar @(TunnelStatus.IsConnected ? "tunnel-connected" : "tunnel-disconnected")">
+            @if (TunnelStatus.IsConnected)
+            {
+                <span class="tunnel-dot connected"></span>
+                <span>🟢 Túnel activo: <strong>@TunnelStatus.TunnelUrl</strong></span>
+            }
+            else
+            {
+                <span class="tunnel-dot disconnected"></span>
+                <span>@TunnelStatus.Status</span>
+                @if (!TunnelStatus.IsConnected)
+                {
+                    <a href="/configuracion" class="tunnel-config-link">Configurar →</a>
+                }
+            }
+        </div>
+
+        <div class="content-wrapper">
+            @Body
+        </div>
+    </main>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        TunnelStatus.OnStatusChanged += OnTunnelStatusChanged;
+    }
+
+    private void OnTunnelStatusChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        TunnelStatus.OnStatusChanged -= OnTunnelStatusChanged;
+    }
+}

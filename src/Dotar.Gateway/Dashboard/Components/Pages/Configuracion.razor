@@ -1,0 +1,239 @@
+@page "/configuracion"
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Dotar.Gateway.Infrastructure.Services
+@using Dotar.Gateway.Infrastructure.Tunnel
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject TunnelStatusService TunnelStatus
+@inject ILogger<Configuracion> Logger
+
+<h1>⚙️ Configuración</h1>
+
+<div class="config-section">
+    <h2>🌐 Cloudflare Tunnel</h2>
+    <p class="config-description">
+        Configurá las credenciales de Cloudflare para crear un túnel que permita
+        acceso externo al Gateway desde <strong>woocommerce-gateway.dotarsoluciones.com</strong>
+    </p>
+
+    <div class="form-card">
+        <div class="form-group">
+            <label>API Token <small>(Cloudflare Dashboard → API Tokens)</small></label>
+            <input @bind="_apiToken" class="form-input" type="password" placeholder="Tu API Token de Cloudflare" />
+        </div>
+        <div class="form-group">
+            <label>Account ID <small>(Overview → API → Account ID)</small></label>
+            <input @bind="_accountId" class="form-input" placeholder="ej: a1b2c3d4e5f6..." />
+        </div>
+        <div class="form-group">
+            <label>Zone ID <small>(Overview → API → Zone ID)</small></label>
+            <input @bind="_zoneId" class="form-input" placeholder="ej: z9y8x7w6v5u4..." />
+        </div>
+        <div class="form-group">
+            <label>Nombre del Túnel</label>
+            <input @bind="_tunnelName" class="form-input" placeholder="woocommerce-gateway" />
+        </div>
+        <div class="form-group">
+            <label>Dominio</label>
+            <input @bind="_domain" class="form-input" placeholder="dotarsoluciones.com" />
+        </div>
+
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" @onclick="SaveConfig" disabled="@_isSaving">
+                @if (_isSaving)
+                {
+                    <span>⏳ Guardando...</span>
+                }
+                else
+                {
+
+                    <span>💾 Guardar Configuración</span>
+                }
+            </button>
+
+            @if (_isConfigured)
+            {
+                <button type="button" class="btn btn-success" @onclick="CreateTunnel" disabled="@_isCreatingTunnel">
+                    @if (_isCreatingTunnel)
+                    {
+                        <span>⏳ Creando túnel...</span>
+                    }
+                    else
+                    {
+
+                        <span>🚀 Crear / Reconectar Túnel</span>
+                    }
+                </button>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @_messageClass" style="margin-top: 1rem;">@_message</div>
+        }
+    </div>
+</div>
+
+@if (TunnelStatus.IsConnected)
+{
+    <div class="config-section" style="margin-top: 2rem;">
+        <h2>✅ Túnel Activo</h2>
+        <div class="tunnel-info-card">
+            <div class="tunnel-info-row">
+                <span class="tunnel-label">URL Externa:</span>
+                <code class="tunnel-value">@TunnelStatus.TunnelUrl</code>
+            </div>
+            <div class="tunnel-info-row">
+                <span class="tunnel-label">Estado:</span>
+                <span class="badge badge-success">Conectado</span>
+            </div>
+            <div class="tunnel-info-row">
+                <span class="tunnel-label">Endpoint de Ingesta:</span>
+                <code class="tunnel-value">@(TunnelStatus.TunnelUrl)/ingest/{slug}</code>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string _apiToken = string.Empty;
+    private string _accountId = string.Empty;
+    private string _zoneId = string.Empty;
+    private string _tunnelName = "woocommerce-gateway";
+    private string _domain = "dotarsoluciones.com";
+    private bool _isSaving;
+    private bool _isCreatingTunnel;
+    private bool _isConfigured;
+    private string? _message;
+    private string _messageClass = "alert-success";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConfig();
+    }
+
+    private async Task LoadConfig()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        _apiToken = await GetSettingAsync(db, "Cloudflare:ApiToken") ?? string.Empty;
+        _accountId = await GetSettingAsync(db, "Cloudflare:AccountId") ?? string.Empty;
+        _zoneId = await GetSettingAsync(db, "Cloudflare:ZoneId") ?? string.Empty;
+        _tunnelName = await GetSettingAsync(db, "Cloudflare:TunnelName") ?? "woocommerce-gateway";
+        _domain = await GetSettingAsync(db, "Cloudflare:Domain") ?? "dotarsoluciones.com";
+
+        _isConfigured = !string.IsNullOrWhiteSpace(_apiToken)
+            && !string.IsNullOrWhiteSpace(_accountId)
+            && !string.IsNullOrWhiteSpace(_zoneId);
+    }
+
+    private async Task SaveConfig()
+    {
+        _isSaving = true;
+        _message = null;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_apiToken) ||
+                string.IsNullOrWhiteSpace(_accountId) ||
+                string.IsNullOrWhiteSpace(_zoneId))
+            {
+                _message = "API Token, Account ID y Zone ID son obligatorios.";
+                _messageClass = "alert-danger";
+                return;
+            }
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+            await SetSettingAsync(db, "Cloudflare:ApiToken", _apiToken);
+            await SetSettingAsync(db, "Cloudflare:AccountId", _accountId);
+            await SetSettingAsync(db, "Cloudflare:ZoneId", _zoneId);
+            await SetSettingAsync(db, "Cloudflare:TunnelName", _tunnelName);
+            await SetSettingAsync(db, "Cloudflare:Domain", _domain);
+
+            await db.SaveChangesAsync();
+
+            _isConfigured = true;
+            _message = "✅ Configuración guardada correctamente.";
+            _messageClass = "alert-success";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error al guardar configuración Cloudflare");
+            _message = $"Error: {ex.Message}";
+            _messageClass = "alert-danger";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task CreateTunnel()
+    {
+        _isCreatingTunnel = true;
+        _message = null;
+        TunnelStatus.UpdateStatus("⏳ Creando túnel...");
+
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+            var config = new CloudflareConfig
+            {
+                TunnelName = _tunnelName,
+                Domain = _domain,
+                ApiToken = _apiToken,
+                AccountId = _accountId,
+                ZoneId = _zoneId
+            };
+
+            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+            var tunnelLogger = loggerFactory.CreateLogger<CloudflareTunnelManager>();
+
+            var manager = new CloudflareTunnelManager(5200, config, tunnelLogger);
+            await manager.StartAsync();
+
+            var tunnelUrl = $"https://{_tunnelName}.{_domain}";
+            TunnelStatus.UpdateStatus("Conectado", tunnelUrl, isConnected: true);
+
+            _message = $"✅ Túnel creado: {tunnelUrl}";
+            _messageClass = "alert-success";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error al crear túnel Cloudflare");
+            _message = $"Error al crear túnel: {ex.Message}";
+            _messageClass = "alert-danger";
+            TunnelStatus.UpdateStatus($"❌ Error: {ex.Message}");
+        }
+        finally
+        {
+            _isCreatingTunnel = false;
+        }
+    }
+
+    private static async Task<string?> GetSettingAsync(GatewayDbContext db, string key)
+    {
+        var setting = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key);
+        return setting?.Value;
+    }
+
+    private static async Task SetSettingAsync(GatewayDbContext db, string key, string value)
+    {
+        var setting = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key);
+        if (setting is null)
+        {
+            db.AppSettings.Add(new AppSetting { Key = key, Value = value });
+        }
+        else
+        {
+            setting.Value = value;
+            setting.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+}
