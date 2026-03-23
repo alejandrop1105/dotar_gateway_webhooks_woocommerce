@@ -23,20 +23,22 @@
 
     <main class="main-content">
         @* ─── Barra de estado del túnel ─── *@
-        <div class="tunnel-bar @(TunnelStatus.IsConnected ? "tunnel-connected" : "tunnel-disconnected")">
+        <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; padding:0.5rem 1rem; font-size:0.85rem; border-bottom:1px solid rgba(255,255,255,0.08); background:rgba(15,23,42,0.6);">
             @if (TunnelStatus.IsConnected)
             {
-                <span class="tunnel-dot connected"></span>
-                <span>🟢 Túnel activo: <strong>@TunnelStatus.TunnelUrl</strong></span>
+                <span>🟢 Túnel activo:
+                    <span style="color:#10b981; font-weight:600;">@TunnelStatus.TunnelUrl</span><span style="color:#e2e8f0;">/ingest/{slug}</span>
+                </span>
+                <button style="background:transparent; border:1px solid transparent; cursor:pointer; font-size:0.85rem; padding:0.15rem 0.4rem; border-radius:4px; line-height:1;"
+                        onmouseover="this.style.background='rgba(255,255,255,0.1)'"
+                        onmouseout="this.style.background='transparent'"
+                        onclick="clipboardHelper.copyText('@(TunnelStatus.TunnelUrl)/ingest/{slug}').then(function(){var b=event.target.closest('button');b.textContent='✅';setTimeout(function(){b.textContent='📋'},1500)})"
+                        title="Copiar URL completa">📋</button>
             }
             else
             {
-                <span class="tunnel-dot disconnected"></span>
-                <span>@TunnelStatus.Status</span>
-                @if (!TunnelStatus.IsConnected)
-                {
-                    <a href="/configuracion" class="tunnel-config-link">Configurar →</a>
-                }
+                <span>🔴 @TunnelStatus.Status</span>
+                <a href="/configuracion" style="color:#6c63ff; text-decoration:none; font-weight:500; margin-left:0.5rem;">Configurar →</a>
             }
         </div>
 
