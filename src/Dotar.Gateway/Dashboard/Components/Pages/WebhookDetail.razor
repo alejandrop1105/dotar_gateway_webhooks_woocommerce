@@ -12,126 +12,150 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
-<div style="margin-bottom: 1rem;">
-    <a href="/monitor" class="btn btn-secondary btn-sm">← Volver al Monitor</a>
-</div>
+<MudButton Variant="Variant.Outlined" Size="Size.Small" Href="/monitor"
+           StartIcon="@Icons.Material.Filled.ArrowBack" Class="mb-4">
+    Volver al Monitor
+</MudButton>
 
 @if (_log is null)
 {
-    <p class="empty-state">Webhook no encontrado.</p>
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+        Webhook no encontrado.
+    </MudAlert>
 }
 else
 {
-    <h1>📋 Detalle del Webhook #@_log.Id</h1>
+    <MudText Typo="Typo.h4" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.Article" Class="mr-2" /> Detalle del Webhook #@_log.Id
+    </MudText>
 
-    <!-- Info del Webhook -->
-    <div class="stats-grid" style="margin-bottom: 1.5rem;">
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">@_log.Tenant.Name</div>
-            <div class="stat-label">Tenant</div>
-        </div>
-        <div
-            class="stat-card @(_log.Status == DeliveryStatus.Success || _log.Status == DeliveryStatus.ManualRetry ? "success" : _log.Status == DeliveryStatus.Scheduled ? "accent" : "danger")">
-            <div class="stat-value" style="font-size: 1.5rem;">@GetStatusLabel(_log.Status)</div>
-            <div class="stat-label">Estado Actual</div>
-        </div>
-        <div class="stat-card accent">
-            <div class="stat-value">@_log.AttemptNumber</div>
-            <div class="stat-label">Intentos Totales</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.2rem;">@_log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")
-            </div>
-            <div class="stat-label">Recibido</div>
-        </div>
-    </div>
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                <MudText Typo="Typo.h5">@_log.Tenant.Name</MudText>
+                <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">Tenant</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                <MudChip T="string" Size="Size.Medium"
+                         Color="@(_log.Status == DeliveryStatus.Success || _log.Status == DeliveryStatus.ManualRetry ? Color.Success : _log.Status == DeliveryStatus.Scheduled ? Color.Primary : Color.Error)">
+                    @GetStatusLabel(_log.Status)
+                </MudChip>
+                <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">Estado Actual</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                <MudText Typo="Typo.h3" Color="Color.Primary">@_log.AttemptNumber</MudText>
+                <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">Intentos Totales</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                <MudText Typo="Typo.h6">@_log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</MudText>
+                <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">Recibido</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
 
-    <!-- URL y Acciones -->
-    <div class="detail-section">
-        <div class="detail-row">
-            <span class="detail-label">URL Destino:</span>
-            <code class="detail-value">@(_log.TargetUrl ?? _log.Tenant.TargetUrl)</code>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">Event ID:</span>
-            <code class="detail-value">@_log.WebhookEventId</code>
-        </div>
-        @if (_log.NextRetryAt.HasValue && _log.Status == DeliveryStatus.Scheduled)
-        {
-            <div class="detail-row">
-                <span class="detail-label">Próximo reintento:</span>
-                <span class="detail-value" style="color: var(--warning);">
-                    @_log.NextRetryAt.Value.ToLocalTime().ToString("dd/MM HH:mm:ss")
-                    <small>(en @FormatTimeUntil(_log.NextRetryAt.Value))</small>
-                </span>
-            </div>
-        }
-    </div>
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudStack Spacing="2">
+            @if (!string.IsNullOrEmpty(_log.SourceUrl))
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">URL Origen:</MudText>
+                    <MudText Typo="Typo.body2"><code>@_log.SourceUrl</code></MudText>
+                </MudStack>
+            }
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">URL Destino:</MudText>
+                <MudText Typo="Typo.body2"><code>@(_log.TargetUrl ?? _log.Tenant.TargetUrl)</code></MudText>
+            </MudStack>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Event ID:</MudText>
+                <MudText Typo="Typo.body2"><code>@_log.WebhookEventId</code></MudText>
+            </MudStack>
+            @if (_log.NextRetryAt.HasValue && _log.Status == DeliveryStatus.Scheduled)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Próximo reintento:</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Warning">
+                        @_log.NextRetryAt.Value.ToLocalTime().ToString("dd/MM HH:mm:ss")
+                        <small>(en @FormatTimeUntil(_log.NextRetryAt.Value))</small>
+                    </MudText>
+                </MudStack>
+            }
+        </MudStack>
+    </MudPaper>
 
-    <div class="form-actions" style="margin-bottom: 1.5rem;">
-        @if (_log.Status == DeliveryStatus.Failed || _log.Status == DeliveryStatus.Scheduled)
-        {
-            <button class="btn btn-success" @onclick="RetryNow" disabled="@_isRetrying">
-                @if (_isRetrying)
-                {
-                    <span>⏳ Enviando...</span>
-                }
-                else
-                {
-                    <span>🔄 Reenviar Ahora</span>
-                }
-            </button>
-        }
-    </div>
+    @if (_log.Status == DeliveryStatus.Failed || _log.Status == DeliveryStatus.Scheduled)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Success"
+                   StartIcon="@Icons.Material.Filled.Replay" OnClick="RetryNow"
+                   Disabled="_isRetrying" Class="mb-4">
+            @(_isRetrying ? "Enviando..." : "Reenviar Ahora")
+        </MudButton>
+    }
 
     @if (!string.IsNullOrEmpty(_message))
     {
-        <div class="alert @_messageClass" style="margin-bottom: 1rem;">@_message</div>
+        <MudAlert Severity="@(_messageClass == "alert-success" ? Severity.Success : Severity.Error)"
+                  Class="mb-4">
+            @_message
+        </MudAlert>
     }
 
-    <!-- Timeline de Intentos -->
-    <h2>📊 Historial de Intentos</h2>
-    <div class="attempts-timeline">
+    <MudText Typo="Typo.h5" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.Timeline" Class="mr-2" /> Historial de Intentos
+    </MudText>
+
+    <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-4">
         @foreach (var attempt in _attempts)
         {
             var isSuccess = attempt.HttpStatusCode.HasValue && attempt.HttpStatusCode >= 200 && attempt.HttpStatusCode < 300;
-            <div class="attempt-card @(isSuccess ? "attempt-success" : "attempt-failed")">
-                <div class="attempt-header">
-                    <span class="attempt-number">Intento #@attempt.AttemptNumber</span>
-                    <span class="badge @(isSuccess ? "badge-success" : "badge-danger")">
-                        @(attempt.IsManual
-                            ? (isSuccess ? "🔄 Manual OK" : "🔄 Manual")
-                            : (isSuccess ? "🤖 Auto OK" : "🤖 Auto"))
-                    </span>
-                    <span class="attempt-date">@attempt.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</span>
-                </div>
-                <div class="attempt-details">
-                    <span>HTTP: <strong>@(attempt.HttpStatusCode ?? 0)</strong></span>
-                    <span>Duración: <strong>@attempt.DurationMs ms</strong></span>
-                </div>
-                @if (!string.IsNullOrEmpty(attempt.ErrorMessage))
-                {
-                    <div class="attempt-error">❌ @attempt.ErrorMessage</div>
-                }
-            </div>
+            <MudTimelineItem Color="@(isSuccess ? Color.Success : Color.Error)" Size="Size.Medium">
+                <MudPaper Class="pa-3" Elevation="1">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">
+                        <MudText Typo="Typo.subtitle2">Intento #@attempt.AttemptNumber</MudText>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(isSuccess ? Color.Success : Color.Error)">
+                            @(attempt.IsManual ? (isSuccess ? "Manual OK" : "Manual") : (isSuccess ? "Auto OK" : "Auto"))
+                        </MudChip>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption">@attempt.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</MudText>
+                    </MudStack>
+                    <MudStack Row="true" Spacing="4">
+                        <MudText Typo="Typo.body2">HTTP: <strong>@(attempt.HttpStatusCode ?? 0)</strong></MudText>
+                        <MudText Typo="Typo.body2">Duración: <strong>@attempt.DurationMs ms</strong></MudText>
+                    </MudStack>
+                    @if (!string.IsNullOrEmpty(attempt.ErrorMessage))
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Error" Class="mt-1">
+                            ❌ @attempt.ErrorMessage
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudTimelineItem>
         }
-    </div>
+    </MudTimeline>
 
-    <!-- Payload -->
-    <div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
-        <h2 style="margin: 0;">📦 Payload</h2>
-        <button class="btn btn-sm btn-secondary" @onclick="CopyPayload">
-            @(_copied ? "✅ Copiado!" : "📋 Copiar")
-        </button>
-    </div>
-    <div class="payload-viewer">
-        <pre><code>@FormatJson(_log.Payload)</code></pre>
-    </div>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+        <MudText Typo="Typo.h5">
+            <MudIcon Icon="@Icons.Material.Filled.DataObject" Class="mr-2" /> Payload
+        </MudText>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyPayload">
+            @(_copied ? "✅ Copiado!" : "Copiar")
+        </MudButton>
+    </MudStack>
+    <MudPaper Class="pa-4" Elevation="2" Style="overflow-x: auto;">
+        <pre style="margin:0; font-size:0.85rem; color: var(--mud-palette-text-primary);"><code>@FormatJson(_log.Payload)</code></pre>
+    </MudPaper>
 }
 
 @code {
     [Parameter] public long LogId { get; set; }
-
     private DeliveryLog? _log;
     private List<DeliveryAttempt> _attempts = [];
     private bool _isRetrying;
@@ -154,30 +178,21 @@ else
     {
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-
         _log = await db.DeliveryLogs
             .Include(l => l.Tenant)
             .Include(l => l.Attempts.OrderBy(a => a.AttemptNumber))
             .FirstOrDefaultAsync(l => l.Id == LogId);
-
         _attempts = _log?.Attempts ?? [];
     }
 
     private async Task RetryNow()
     {
-        _isRetrying = true;
-        _message = null;
+        _isRetrying = true; _message = null;
         var result = await Worker.RetryManualAsync(LogId);
-        if (result.IsSuccess)
-        {
-            _message = $"✅ Reenvío exitoso (HTTP {result.StatusCode})";
-            _messageClass = "alert-success";
-        }
-        else
-        {
-            _message = $"❌ Falló: {result.ErrorMessage}";
-            _messageClass = "alert-danger";
-        }
+        _message = result.IsSuccess
+            ? $"✅ Reenvío exitoso (HTTP {result.StatusCode})"
+            : $"❌ Falló: {result.ErrorMessage}";
+        _messageClass = result.IsSuccess ? "alert-success" : "alert-danger";
         _isRetrying = false;
         await LoadData();
     }
@@ -186,12 +201,10 @@ else
     {
         if (_log?.Payload is null) return;
         var json = FormatJson(_log.Payload);
-        await JS.InvokeVoidAsync("clipboardHelper.copyText", json);
-        _copied = true;
-        StateHasChanged();
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", json);
+        _copied = true; StateHasChanged();
         await Task.Delay(2000);
-        _copied = false;
-        StateHasChanged();
+        _copied = false; StateHasChanged();
     }
 
     private string GetStatusLabel(DeliveryStatus s) => s switch
@@ -208,10 +221,7 @@ else
         try
         {
             var doc = System.Text.Json.JsonDocument.Parse(json);
-            return System.Text.Json.JsonSerializer.Serialize(doc, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
+            return System.Text.Json.JsonSerializer.Serialize(doc, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
         }
         catch { return json; }
     }

@@ -10,164 +10,186 @@
 @inject WebhookDispatcherWorker Worker
 @implements IDisposable
 
-<h1>📡 Monitor de Entregas</h1>
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.MonitorHeart" Class="mr-2" /> Monitor de Entregas
+</MudText>
 
-<div class="stats-grid" style="margin-bottom: 1.5rem;">
-    <div class="stat-card accent">
-        <div class="stat-value">@_pendingCount</div>
-        <div class="stat-label">En Cola Redis</div>
-    </div>
-    <div class="stat-card success">
-        <div class="stat-value">@_successCount</div>
-        <div class="stat-label">Exitosos</div>
-    </div>
-    <div class="stat-card danger">
-        <div class="stat-value">@_failedCount</div>
-        <div class="stat-label">Fallidos</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-value">@_successRate%</div>
-        <div class="stat-label">Tasa de Éxito</div>
-    </div>
-</div>
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3" Color="Color.Primary">@_pendingCount</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">En Cola Redis</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3" Color="Color.Success">@_successCount</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">Exitosos</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3" Color="Color.Error">@_failedCount</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">Fallidos</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3">@_successRate%</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">Tasa de Éxito</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
 
-<div class="filter-bar">
-    <select @bind="_filterTenantId" class="form-input" style="max-width: 200px;">
-        <option value="0">Todos los tenants</option>
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudSelect T="int" @bind-Value="_filterTenantId" Label="Tenant" Variant="Variant.Outlined"
+               Dense="true" Style="max-width:200px;">
+        <MudSelectItem T="int" Value="0">Todos los tenants</MudSelectItem>
         @foreach (var t in _tenants)
         {
-            <option value="@t.Id">@t.Name</option>
+            <MudSelectItem T="int" Value="@t.Id">@t.Name</MudSelectItem>
         }
-    </select>
-    <select @bind="_filterStatus" class="form-input" style="max-width: 160px;">
-        <option value="">Todos</option>
-        <option value="success">✅ Exitosos</option>
-        <option value="failed">❌ Fallidos</option>
-        <option value="manual">🔄 Reenvíos</option>
-    </select>
-    <button class="btn btn-primary" @onclick="LoadLogs">🔄 Actualizar</button>
+    </MudSelect>
+    <MudSelect T="string" @bind-Value="_filterStatus" Label="Estado" Variant="Variant.Outlined"
+               Dense="true" Style="max-width:160px;">
+        <MudSelectItem T="string" Value="@("")">Todos</MudSelectItem>
+        <MudSelectItem T="string" Value="@("success")">✅ Exitosos</MudSelectItem>
+        <MudSelectItem T="string" Value="@("failed")">❌ Fallidos</MudSelectItem>
+        <MudSelectItem T="string" Value="@("manual")">🔄 Reenvíos</MudSelectItem>
+    </MudSelect>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadLogs">
+        Actualizar
+    </MudButton>
 
     @if (_selectedIds.Count > 0)
     {
-        <button class="btn btn-danger" @onclick="DeleteSelected">
-            🗑️ Eliminar @_selectedIds.Count seleccionados
-        </button>
+        <MudButton Variant="Variant.Filled" Color="Color.Error"
+                   StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteSelected">
+            Eliminar @_selectedIds.Count
+        </MudButton>
     }
 
     @if (_failedCount > 0 && _filterTenantId > 0)
     {
-        <button class="btn btn-success" @onclick="RetryAllFailed" disabled="@_isRetrying">
-            @if (_isRetrying)
-            {
-                <span>⏳ Reenviando...</span>
-            }
-            else
-            {
-
-                <span>🔁 Reenviar Fallidos</span>
-            }
-        </button>
+        <MudButton Variant="Variant.Filled" Color="Color.Success"
+                   StartIcon="@Icons.Material.Filled.Replay" OnClick="RetryAllFailed"
+                   Disabled="_isRetrying">
+            @(_isRetrying ? "Reenviando..." : "Reenviar Fallidos")
+        </MudButton>
     }
 
-    <span class="auto-refresh-badge">
-        <span class="tunnel-dot connected"></span> Auto-refresh activo
-    </span>
-</div>
+    <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.Autorenew">
+        Auto-refresh activo
+    </MudChip>
+</MudStack>
 
 @if (!string.IsNullOrEmpty(_message))
 {
-    <div class="alert @_messageClass" style="margin-bottom: 1rem;">@_message</div>
+    <MudAlert Severity="@(_messageClass == "alert-success" ? Severity.Success : Severity.Error)"
+              Class="mb-4" ShowCloseIcon="true" CloseIconClicked="() => _message = null">
+        @_message
+    </MudAlert>
 }
 
 @if (_logs.Any())
 {
-    <div class="table-container">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th style="width: 32px;">
-                        <input type="checkbox" @onchange="ToggleSelectAll"
-                               checked="@(_selectedIds.Count == _logs.Count && _logs.Count > 0)" />
-                    </th>
-                    <th>ID</th>
-                    <th>Tenant</th>
-                    <th>Status</th>
-                    <th>HTTP</th>
-                    <th>Intentos</th>
-                    <th>Duración</th>
-                    <th>Error</th>
-                    <th>Fecha</th>
-                    <th>Acciones</th>
+    <MudSimpleTable Hover="true" Dense="true" Elevation="2">
+        <thead>
+            <tr>
+                <th style="width:32px;">
+                    <MudCheckBox T="bool" Value="@(_selectedIds.Count == _logs.Count && _logs.Count > 0)"
+                                 ValueChanged="ToggleSelectAll" Dense="true" />
+                </th>
+                <th>ID</th>
+                <th>Tenant</th>
+                <th>Status</th>
+                <th>HTTP</th>
+                <th>Intentos</th>
+                <th>Duración</th>
+                <th>Error</th>
+                <th>Fecha</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var log in _logs)
+            {
+                <tr style="@(_selectedIds.Contains(log.Id) ? "background: rgba(108,99,255,0.1);" : "")">
+                    <td>
+                        <MudCheckBox T="bool" Value="@_selectedIds.Contains(log.Id)"
+                                     ValueChanged="_ => ToggleSelect(log.Id)" Dense="true" />
+                    </td>
+                    <td>#@log.Id</td>
+                    <td>@log.Tenant.Name</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(log.Status)">
+                            @GetStatusLabel(log.Status)
+                        </MudChip>
+                    </td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@GetHttpColor(log.HttpStatusCode)">
+                            @(log.HttpStatusCode ?? 0)
+                        </MudChip>
+                    </td>
+                    <td>@log.AttemptNumber</td>
+                    <td>@log.DurationMs ms</td>
+                    <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--mud-palette-error);">
+                        @(log.ErrorMessage ?? "—")
+                    </td>
+                    <td>
+                        @log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")
+                        @if (log.Status == DeliveryStatus.Scheduled && log.NextRetryAt.HasValue)
+                        {
+                            <br />
+                            <MudText Typo="Typo.caption" Color="Color.Warning">
+                                ⏳ Reintento: @log.NextRetryAt.Value.ToLocalTime().ToString("HH:mm:ss")
+                            </MudText>
+                        }
+                    </td>
+                    <td>
+                        <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                       Href="@($"/monitor/{log.Id}")" Title="Ver detalle" />
+                        @if ((log.Status == DeliveryStatus.Failed || log.Status == DeliveryStatus.Scheduled) &&
+                             !string.IsNullOrEmpty(log.Payload))
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Replay" Size="Size.Small"
+                                           Color="Color.Success" OnClick="() => RetryManual(log.Id)"
+                                           Title="Reenviar" />
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick="() => DeleteSingle(log.Id)"
+                                       Title="Eliminar" />
+                    </td>
                 </tr>
-            </thead>
-            <tbody>
-                @foreach (var log in _logs)
-                {
-                    <tr class="@(_selectedIds.Contains(log.Id) ? "row-selected" : "")">
-                        <td>
-                            <input type="checkbox" checked="@_selectedIds.Contains(log.Id)"
-                                   @onchange="() => ToggleSelect(log.Id)" />
-                        </td>
-                        <td>#@log.Id</td>
-                        <td>@log.Tenant.Name</td>
-                        <td>
-                            <span class="badge @GetStatusBadge(log.Status)">
-                                @GetStatusLabel(log.Status)
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge @GetBadgeClass(log.HttpStatusCode)">
-                                @(log.HttpStatusCode ?? 0)
-                            </span>
-                        </td>
-                        <td>@log.AttemptNumber</td>
-                        <td>@log.DurationMs ms</td>
-                        <td class="error-cell">@(log.ErrorMessage ?? "—")</td>
-                        <td>
-                            @log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")
-                            @if (log.Status == DeliveryStatus.Scheduled && log.NextRetryAt.HasValue)
-                            {
-                                <br/>
-                                <small style="color: var(--warning);">
-                                    ⏳ Reintento: @log.NextRetryAt.Value.ToLocalTime().ToString("HH:mm:ss")
-                                </small>
-                            }
-                        </td>
-                        <td class="actions-cell">
-                            <a href="/monitor/@log.Id" class="btn btn-sm btn-secondary" title="Ver detalle">👁️</a>
-                            @if ((log.Status == DeliveryStatus.Failed || log.Status == DeliveryStatus.Scheduled) &&
-                                                                                                                                                                !string.IsNullOrEmpty(log.Payload))
-                            {
-                                <button class="btn btn-sm btn-success" @onclick="() => RetryManual(log.Id)"
-                                        title="Reenviar manualmente">
-                                    🔄
-                                </button>
-                            }
-                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteSingle(log.Id)" title="Eliminar">
-                                🗑️
-                            </button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+            }
+        </tbody>
+    </MudSimpleTable>
 
-    <div class="pagination">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center"
+              Spacing="2" Class="pa-4">
         @if (_page > 1)
         {
-            <button class="btn btn-secondary btn-sm" @onclick="PrevPage">← Anterior</button>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="PrevPage"
+                       StartIcon="@Icons.Material.Filled.ArrowBack">
+                Anterior
+            </MudButton>
         }
-        <span class="page-info">Página @_page</span>
+        <MudText Typo="Typo.body2">Página @_page</MudText>
         @if (_logs.Count == _pageSize)
         {
-            <button class="btn btn-secondary btn-sm" @onclick="NextPage">Siguiente →</button>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="NextPage"
+                       EndIcon="@Icons.Material.Filled.ArrowForward">
+                Siguiente
+            </MudButton>
         }
-    </div>
+    </MudStack>
 }
 else
 {
-    <p class="empty-state">No hay logs de entrega con los filtros seleccionados.</p>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        No hay logs de entrega con los filtros seleccionados.
+    </MudAlert>
 }
 
 @code {
@@ -188,9 +210,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        // Suscribirse a notificaciones de cambio del Worker
         MonitorNotify.OnDeliveryChanged += OnDeliveryChanged;
-
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         _tenants = await db.Tenants.OrderBy(t => t.Name).ToListAsync();
@@ -199,88 +219,56 @@ else
 
     private async Task OnDeliveryChanged()
     {
-        await InvokeAsync(async () =>
-        {
-            await LoadLogs();
-            StateHasChanged();
-        });
+        await InvokeAsync(async () => { await LoadLogs(); StateHasChanged(); });
     }
 
     private async Task LoadLogs()
     {
         _pendingCount = await Queue.GetPendingCountAsync();
-
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-
         var query = db.DeliveryLogs.Include(l => l.Tenant).AsQueryable();
-
-        if (_filterTenantId > 0)
-            query = query.Where(l => l.TenantId == _filterTenantId);
-
-        if (_filterStatus == "success")
-            query = query.Where(l => l.Status == DeliveryStatus.Success);
-        else if (_filterStatus == "failed")
-            query = query.Where(l => l.Status == DeliveryStatus.Failed);
-        else if (_filterStatus == "manual")
-            query = query.Where(l => l.Status == DeliveryStatus.ManualRetry);
+        if (_filterTenantId > 0) query = query.Where(l => l.TenantId == _filterTenantId);
+        if (_filterStatus == "success") query = query.Where(l => l.Status == DeliveryStatus.Success);
+        else if (_filterStatus == "failed") query = query.Where(l => l.Status == DeliveryStatus.Failed);
+        else if (_filterStatus == "manual") query = query.Where(l => l.Status == DeliveryStatus.ManualRetry);
 
         var baseQuery = _filterTenantId > 0
-            ? db.DeliveryLogs.Where(l => l.TenantId == _filterTenantId)
-            : db.DeliveryLogs;
-
-        _successCount = await baseQuery.CountAsync(l => l.Status == DeliveryStatus.Success || l.Status ==
-DeliveryStatus.ManualRetry);
+            ? db.DeliveryLogs.Where(l => l.TenantId == _filterTenantId) : db.DeliveryLogs;
+        _successCount = await baseQuery.CountAsync(l => l.Status == DeliveryStatus.Success || l.Status == DeliveryStatus.ManualRetry);
         _failedCount = await baseQuery.CountAsync(l => l.Status == DeliveryStatus.Failed);
         var total = _successCount + _failedCount;
         _successRate = total > 0 ? (int)Math.Round(_successCount * 100.0 / total) : 100;
 
-        _logs = await query
-            .OrderByDescending(l => l.CreatedAt)
-            .Skip((_page - 1) * _pageSize)
-            .Take(_pageSize)
-            .ToListAsync();
+        _logs = await query.OrderByDescending(l => l.CreatedAt)
+            .Skip((_page - 1) * _pageSize).Take(_pageSize).ToListAsync();
     }
 
     private async Task RetryManual(long logId)
     {
         _message = null;
         var result = await Worker.RetryManualAsync(logId);
-        if (result.IsSuccess)
-        {
-            _message = $"✅ Reenvío #{logId} exitoso (HTTP {result.StatusCode})";
-            _messageClass = "alert-success";
-        }
-        else
-        {
-            _message = $"❌ Reenvío #{logId} falló: {result.ErrorMessage}";
-            _messageClass = "alert-danger";
-        }
+        _message = result.IsSuccess
+            ? $"✅ Reenvío #{logId} exitoso (HTTP {result.StatusCode})"
+            : $"❌ Reenvío #{logId} falló: {result.ErrorMessage}";
+        _messageClass = result.IsSuccess ? "alert-success" : "alert-danger";
         await LoadLogs();
     }
 
     private async Task RetryAllFailed()
     {
-        _isRetrying = true;
-        _message = null;
-
+        _isRetrying = true; _message = null;
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-
         var failedLogs = await db.DeliveryLogs
             .Where(l => l.Status == DeliveryStatus.Failed && l.TenantId == _filterTenantId && l.Payload != null)
-            .OrderBy(l => l.CreatedAt)
-            .Take(50) // Limitar a 50 para no saturar
-            .Select(l => l.Id)
-            .ToListAsync();
-
+            .OrderBy(l => l.CreatedAt).Take(50).Select(l => l.Id).ToListAsync();
         int ok = 0, fail = 0;
         foreach (var logId in failedLogs)
         {
             var result = await Worker.RetryManualAsync(logId);
             if (result.IsSuccess) ok++; else fail++;
         }
-
         _message = $"🔁 Reenvío masivo: {ok} exitosos, {fail} fallidos de {failedLogs.Count} total";
         _messageClass = fail == 0 ? "alert-success" : "alert-danger";
         _isRetrying = false;
@@ -290,42 +278,36 @@ DeliveryStatus.ManualRetry);
     private async Task PrevPage() { _page--; await LoadLogs(); }
     private async Task NextPage() { _page++; await LoadLogs(); }
 
-    private string GetBadgeClass(int? statusCode) => statusCode switch
+    private Color GetHttpColor(int? statusCode) => statusCode switch
     {
-        >= 200 and < 300 => "badge-success",
-        >= 300 and < 400 => "badge-warning",
-        _ => "badge-danger"
+        >= 200 and < 300 => Color.Success,
+        >= 300 and < 400 => Color.Warning,
+        _ => Color.Error
     };
 
-    private string GetStatusBadge(DeliveryStatus status) => status switch
+    private Color GetStatusColor(DeliveryStatus status) => status switch
     {
-        DeliveryStatus.Success => "badge-success",
-        DeliveryStatus.ManualRetry => "badge-success",
-        DeliveryStatus.Scheduled => "badge-warning",
-        _ => "badge-danger"
+        DeliveryStatus.Success or DeliveryStatus.ManualRetry => Color.Success,
+        DeliveryStatus.Scheduled => Color.Warning,
+        _ => Color.Error
     };
 
     private string GetStatusLabel(DeliveryStatus status) => status switch
     {
-        DeliveryStatus.Success => "✅ Éxito",
-        DeliveryStatus.ManualRetry => "🔄 Manual",
-        DeliveryStatus.Scheduled => "⏳ Programado",
-        _ => "❌ Fallido"
+        DeliveryStatus.Success => "Éxito",
+        DeliveryStatus.ManualRetry => "Manual",
+        DeliveryStatus.Scheduled => "Programado",
+        _ => "Fallido"
     };
 
-    // ─── Selección ──────────────────────────────────
-    private void ToggleSelect(long id)
-    {
-        if (!_selectedIds.Remove(id)) _selectedIds.Add(id);
-    }
+    private void ToggleSelect(long id) { if (!_selectedIds.Remove(id)) _selectedIds.Add(id); }
 
-    private void ToggleSelectAll(ChangeEventArgs e)
+    private void ToggleSelectAll(bool value)
     {
-        if (e.Value is true) _selectedIds = _logs.Select(l => l.Id).ToHashSet();
+        if (value) _selectedIds = _logs.Select(l => l.Id).ToHashSet();
         else _selectedIds.Clear();
     }
 
-    // ─── Eliminación ────────────────────────────────
     private async Task DeleteSelected()
     {
         if (_selectedIds.Count == 0) return;
@@ -333,8 +315,7 @@ DeliveryStatus.ManualRetry);
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         await db.DeliveryLogs.Where(l => _selectedIds.Contains(l.Id)).ExecuteDeleteAsync();
         _selectedIds.Clear();
-        _message = "Registros eliminados.";
-        _messageClass = "alert-success";
+        _message = "Registros eliminados."; _messageClass = "alert-success";
         await LoadLogs();
     }
 
@@ -347,8 +328,5 @@ DeliveryStatus.ManualRetry);
         await LoadLogs();
     }
 
-    public void Dispose()
-    {
-        MonitorNotify.OnDeliveryChanged -= OnDeliveryChanged;
-    }
+    public void Dispose() => MonitorNotify.OnDeliveryChanged -= OnDeliveryChanged;
 }

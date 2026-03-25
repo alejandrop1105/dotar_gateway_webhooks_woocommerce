@@ -8,92 +8,83 @@
 @inject TunnelStatusService TunnelStatus
 @inject ILogger<Configuracion> Logger
 
-<h1>⚙️ Configuración</h1>
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2" /> Configuración
+</MudText>
 
-<div class="config-section">
-    <h2>🌐 Cloudflare Tunnel</h2>
-    <p class="config-description">
+<MudPaper Class="pa-6" MaxWidth="700px" Elevation="2">
+    <MudText Typo="Typo.h5" Class="mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.Cloud" Class="mr-2" /> Cloudflare Tunnel
+    </MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
         Configurá las credenciales de Cloudflare para crear un túnel que permita
         acceso externo al Gateway desde <strong>woocommerce-gateway.dotarsoluciones.com</strong>
-    </p>
+    </MudText>
 
-    <div class="form-card">
-        <div class="form-group">
-            <label>API Token <small>(Cloudflare Dashboard → API Tokens)</small></label>
-            <input @bind="_apiToken" class="form-input" type="password" placeholder="Tu API Token de Cloudflare" />
-        </div>
-        <div class="form-group">
-            <label>Account ID <small>(Overview → API → Account ID)</small></label>
-            <input @bind="_accountId" class="form-input" placeholder="ej: a1b2c3d4e5f6..." />
-        </div>
-        <div class="form-group">
-            <label>Zone ID <small>(Overview → API → Zone ID)</small></label>
-            <input @bind="_zoneId" class="form-input" placeholder="ej: z9y8x7w6v5u4..." />
-        </div>
-        <div class="form-group">
-            <label>Nombre del Túnel</label>
-            <input @bind="_tunnelName" class="form-input" placeholder="woocommerce-gateway" />
-        </div>
-        <div class="form-group">
-            <label>Dominio</label>
-            <input @bind="_domain" class="form-input" placeholder="dotarsoluciones.com" />
-        </div>
+    <MudStack Spacing="3">
+        <MudTextField @bind-Value="_apiToken" Label="API Token"
+                      HelperText="Cloudflare Dashboard → API Tokens"
+                      InputType="InputType.Password" Variant="Variant.Outlined" />
+        <MudTextField @bind-Value="_accountId" Label="Account ID"
+                      HelperText="Overview → API → Account ID"
+                      Placeholder="ej: a1b2c3d4e5f6..." Variant="Variant.Outlined" />
+        <MudTextField @bind-Value="_zoneId" Label="Zone ID"
+                      HelperText="Overview → API → Zone ID"
+                      Placeholder="ej: z9y8x7w6v5u4..." Variant="Variant.Outlined" />
+        <MudTextField @bind-Value="_tunnelName" Label="Nombre del Túnel"
+                      Variant="Variant.Outlined" />
+        <MudTextField @bind-Value="_domain" Label="Dominio"
+                      Variant="Variant.Outlined" />
 
-        <div class="form-actions">
-            <button type="button" class="btn btn-primary" @onclick="SaveConfig" disabled="@_isSaving">
-                @if (_isSaving)
-                {
-                    <span>⏳ Guardando...</span>
-                }
-                else
-                {
-
-                    <span>💾 Guardar Configuración</span>
-                }
-            </button>
+        <MudStack Row="true" Spacing="2" Class="mt-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save" OnClick="SaveConfig"
+                       Disabled="_isSaving">
+                @(_isSaving ? "Guardando..." : "Guardar Configuración")
+            </MudButton>
 
             @if (_isConfigured)
             {
-                <button type="button" class="btn btn-success" @onclick="CreateTunnel" disabled="@_isCreatingTunnel">
-                    @if (_isCreatingTunnel)
-                    {
-                        <span>⏳ Creando túnel...</span>
-                    }
-                    else
-                    {
-
-                        <span>🚀 Crear / Reconectar Túnel</span>
-                    }
-                </button>
+                <MudButton Variant="Variant.Filled" Color="Color.Success"
+                           StartIcon="@Icons.Material.Filled.RocketLaunch" OnClick="CreateTunnel"
+                           Disabled="_isCreatingTunnel">
+                    @(_isCreatingTunnel ? "Creando túnel..." : "Crear / Reconectar Túnel")
+                </MudButton>
             }
-        </div>
+        </MudStack>
 
         @if (!string.IsNullOrEmpty(_message))
         {
-            <div class="alert @_messageClass" style="margin-top: 1rem;">@_message</div>
+            <MudAlert Severity="@(_messageClass == "alert-success" ? Severity.Success : Severity.Error)"
+                      Class="mt-2" ShowCloseIcon="true" CloseIconClicked="() => _message = null">
+                @_message
+            </MudAlert>
         }
-    </div>
-</div>
+    </MudStack>
+</MudPaper>
 
 @if (TunnelStatus.IsConnected)
 {
-    <div class="config-section" style="margin-top: 2rem;">
-        <h2>✅ Túnel Activo</h2>
-        <div class="tunnel-info-card">
-            <div class="tunnel-info-row">
-                <span class="tunnel-label">URL Externa:</span>
-                <code class="tunnel-value">@TunnelStatus.TunnelUrl</code>
-            </div>
-            <div class="tunnel-info-row">
-                <span class="tunnel-label">Estado:</span>
-                <span class="badge badge-success">Conectado</span>
-            </div>
-            <div class="tunnel-info-row">
-                <span class="tunnel-label">Endpoint de Ingesta:</span>
-                <code class="tunnel-value">@(TunnelStatus.TunnelUrl)/ingest/{slug}</code>
-            </div>
-        </div>
-    </div>
+    <MudPaper Class="pa-6 mt-6" MaxWidth="700px" Elevation="2">
+        <MudText Typo="Typo.h5" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-2" />
+            Túnel Activo
+        </MudText>
+        <MudStack Spacing="2">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">URL Externa:</MudText>
+                <MudText Typo="Typo.body2"><code>@TunnelStatus.TunnelUrl</code></MudText>
+            </MudStack>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Estado:</MudText>
+                <MudChip T="string" Size="Size.Small" Color="Color.Success">Conectado</MudChip>
+            </MudStack>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Endpoint de Ingesta:</MudText>
+                <MudText Typo="Typo.body2"><code>@(TunnelStatus.TunnelUrl)/ingest/{slug}</code></MudText>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
 }
 
 @code {
@@ -108,22 +99,17 @@
     private string? _message;
     private string _messageClass = "alert-success";
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadConfig();
-    }
+    protected override async Task OnInitializedAsync() => await LoadConfig();
 
     private async Task LoadConfig()
     {
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-
         _apiToken = await GetSettingAsync(db, "Cloudflare:ApiToken") ?? string.Empty;
         _accountId = await GetSettingAsync(db, "Cloudflare:AccountId") ?? string.Empty;
         _zoneId = await GetSettingAsync(db, "Cloudflare:ZoneId") ?? string.Empty;
         _tunnelName = await GetSettingAsync(db, "Cloudflare:TunnelName") ?? "woocommerce-gateway";
         _domain = await GetSettingAsync(db, "Cloudflare:Domain") ?? "dotarsoluciones.com";
-
         _isConfigured = !string.IsNullOrWhiteSpace(_apiToken)
             && !string.IsNullOrWhiteSpace(_accountId)
             && !string.IsNullOrWhiteSpace(_zoneId);
@@ -131,31 +117,22 @@
 
     private async Task SaveConfig()
     {
-        _isSaving = true;
-        _message = null;
-
+        _isSaving = true; _message = null;
         try
         {
-            if (string.IsNullOrWhiteSpace(_apiToken) ||
-                string.IsNullOrWhiteSpace(_accountId) ||
-                string.IsNullOrWhiteSpace(_zoneId))
+            if (string.IsNullOrWhiteSpace(_apiToken) || string.IsNullOrWhiteSpace(_accountId) || string.IsNullOrWhiteSpace(_zoneId))
             {
                 _message = "API Token, Account ID y Zone ID son obligatorios.";
-                _messageClass = "alert-danger";
-                return;
+                _messageClass = "alert-danger"; return;
             }
-
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-
             await SetSettingAsync(db, "Cloudflare:ApiToken", _apiToken);
             await SetSettingAsync(db, "Cloudflare:AccountId", _accountId);
             await SetSettingAsync(db, "Cloudflare:ZoneId", _zoneId);
             await SetSettingAsync(db, "Cloudflare:TunnelName", _tunnelName);
             await SetSettingAsync(db, "Cloudflare:Domain", _domain);
-
             await db.SaveChangesAsync();
-
             _isConfigured = true;
             _message = "✅ Configuración guardada correctamente.";
             _messageClass = "alert-success";
@@ -163,44 +140,30 @@
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error al guardar configuración Cloudflare");
-            _message = $"Error: {ex.Message}";
-            _messageClass = "alert-danger";
+            _message = $"Error: {ex.Message}"; _messageClass = "alert-danger";
         }
-        finally
-        {
-            _isSaving = false;
-        }
+        finally { _isSaving = false; }
     }
 
     private async Task CreateTunnel()
     {
-        _isCreatingTunnel = true;
-        _message = null;
+        _isCreatingTunnel = true; _message = null;
         TunnelStatus.UpdateStatus("⏳ Creando túnel...");
-
         try
         {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-
             var config = new CloudflareConfig
             {
-                TunnelName = _tunnelName,
-                Domain = _domain,
-                ApiToken = _apiToken,
-                AccountId = _accountId,
-                ZoneId = _zoneId
+                TunnelName = _tunnelName, Domain = _domain,
+                ApiToken = _apiToken, AccountId = _accountId, ZoneId = _zoneId
             };
-
             var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
             var tunnelLogger = loggerFactory.CreateLogger<CloudflareTunnelManager>();
-
             var manager = new CloudflareTunnelManager(5200, config, tunnelLogger);
             await manager.StartAsync();
-
             var tunnelUrl = $"https://{_tunnelName}.{_domain}";
             TunnelStatus.UpdateStatus("Conectado", tunnelUrl, isConnected: true);
-
             _message = $"✅ Túnel creado: {tunnelUrl}";
             _messageClass = "alert-success";
         }
@@ -211,10 +174,7 @@
             _messageClass = "alert-danger";
             TunnelStatus.UpdateStatus($"❌ Error: {ex.Message}");
         }
-        finally
-        {
-            _isCreatingTunnel = false;
-        }
+        finally { _isCreatingTunnel = false; }
     }
 
     private static async Task<string?> GetSettingAsync(GatewayDbContext db, string key)
@@ -226,14 +186,7 @@
     private static async Task SetSettingAsync(GatewayDbContext db, string key, string value)
     {
         var setting = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key);
-        if (setting is null)
-        {
-            db.AppSettings.Add(new AppSetting { Key = key, Value = value });
-        }
-        else
-        {
-            setting.Value = value;
-            setting.UpdatedAt = DateTime.UtcNow;
-        }
+        if (setting is null) db.AppSettings.Add(new AppSetting { Key = key, Value = value });
+        else { setting.Value = value; setting.UpdatedAt = DateTime.UtcNow; }
     }
 }

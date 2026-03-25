@@ -3,6 +3,7 @@ using Dotar.Gateway.Infrastructure.Data;
 using Dotar.Gateway.Infrastructure.Services;
 using Dotar.Gateway.Workers;
 using Microsoft.EntityFrameworkCore;
+using MudBlazor.Services;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -54,7 +55,8 @@ builder.Services.AddSingleton<WebhookDispatcherWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookDispatcherWorker>());
 builder.Services.AddHostedService<TunnelStartupService>();
 
-// ─── Blazor Server (Interactive) ──────────────────────
+// ─── Blazor Server (Interactive) + MudBlazor ─────
+builder.Services.AddMudServices();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -76,6 +78,7 @@ app.UseAntiforgery();
 
 // ─── Minimal API Endpoints ────────────────────────────
 app.MapIngestEndpoints();
+app.MapTenantApiEndpoints();
 
 // ─── Blazor Server ────────────────────────────────────
 app.MapRazorComponents<Dotar.Gateway.Dashboard.Components.App>()

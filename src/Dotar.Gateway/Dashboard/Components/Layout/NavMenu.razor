@@ -1,29 +1,29 @@
-<nav class="nav-menu">
-    <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">
-        <span class="nav-icon">📊</span>
-        <span>Dashboard</span>
-    </NavLink>
-    <NavLink class="nav-link" href="/tenants" Match="NavLinkMatch.Prefix">
-        <span class="nav-icon">🏢</span>
-        <span>Tenants</span>
-    </NavLink>
-    <NavLink class="nav-link" href="/grupos" Match="NavLinkMatch.Prefix">
-        <span class="nav-icon">📁</span>
-        <span>Grupos</span>
-    </NavLink>
-    <NavLink class="nav-link" href="/politicas" Match="NavLinkMatch.Prefix">
-        <span class="nav-icon">🔄</span>
-        <span>Políticas</span>
-    </NavLink>
-    <NavLink class="nav-link" href="/monitor" Match="NavLinkMatch.All">
-        <span class="nav-icon">📡</span>
-        <span>Monitor</span>
-    </NavLink>
-</nav>
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All"
+                Icon="@Icons.Material.Filled.Dashboard">
+        Dashboard
+    </MudNavLink>
+    <MudNavLink Href="/tenants" Match="NavLinkMatch.Prefix"
+                Icon="@Icons.Material.Filled.Business">
+        Tenants
+    </MudNavLink>
+    <MudNavLink Href="/grupos" Match="NavLinkMatch.Prefix"
+                Icon="@Icons.Material.Filled.Folder">
+        Grupos
+    </MudNavLink>
+    <MudNavLink Href="/politicas" Match="NavLinkMatch.Prefix"
+                Icon="@Icons.Material.Filled.Replay">
+        Políticas
+    </MudNavLink>
+    <MudNavLink Href="/monitor" Match="NavLinkMatch.All"
+                Icon="@Icons.Material.Filled.MonitorHeart">
+        Monitor
+    </MudNavLink>
 
-<div class="nav-bottom">
-    <NavLink class="nav-link" href="/configuracion" Match="NavLinkMatch.All">
-        <span class="nav-icon">⚙️</span>
-        <span>Configuración</span>
-    </NavLink>
-</div>
+    <MudDivider Class="my-2" />
+
+    <MudNavLink Href="/configuracion" Match="NavLinkMatch.All"
+                Icon="@Icons.Material.Filled.Settings">
+        Configuración
+    </MudNavLink>
+</MudNavMenu>

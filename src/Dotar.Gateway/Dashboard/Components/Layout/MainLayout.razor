@@ -1,54 +1,76 @@
 @inherits LayoutComponentBase
 @using Dotar.Gateway.Infrastructure.Services
-@using Microsoft.JSInterop
 @inject TunnelStatusService TunnelStatus
 @inject IJSRuntime JS
 @implements IDisposable
 
-<div class="app-container">
-    <aside class="sidebar">
-        <div class="sidebar-header">
-            <span class="logo">⚡</span>
-            <h2>Dotar Gateway</h2>
-            <button class="sidebar-toggle-btn" onclick="sidebarHelper.toggle()" title="Ocultar menú">
-                <span class="hamburger-icon">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </span>
-            </button>
-        </div>
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    @* ─── AppBar superior con estado del túnel ─── *@
+    <MudAppBar Elevation="1" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start"
+                       OnClick="ToggleDrawer" />
+        <MudText Typo="Typo.h6" Class="ml-2"
+                 Style="background: linear-gradient(135deg, #6c63ff, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            ⚡ Dotar Gateway
+        </MudText>
+        <MudSpacer />
+
+        @if (TunnelStatus.IsConnected)
+        {
+            <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.Cloud">
+                Túnel activo
+            </MudChip>
+            <MudText Typo="Typo.body2" Class="mx-2">
+                <span style="color: var(--mud-palette-success);">@TunnelStatus.TunnelUrl</span><span>/ingest/{slug}</span>
+            </MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                           Size="Size.Small"
+                           Color="Color.Inherit"
+                           OnClick="CopyTunnelUrl"
+                           Title="Copiar URL" />
+        }
+        else
+        {
+            <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.CloudOff">
+                @TunnelStatus.Status
+            </MudChip>
+            <MudButton Href="/configuracion" Color="Color.Primary" Size="Size.Small" Class="ml-2">
+                Configurar →
+            </MudButton>
+        }
+    </MudAppBar>
+
+    @* ─── Drawer (sidebar colapsable) ─── *@
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
         <NavMenu />
-    </aside>
+    </MudDrawer>
 
-    <main class="main-content">
-        @* ─── Barra de estado del túnel ─── *@
-        <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; padding:0.5rem 1rem; font-size:0.85rem; border-bottom:1px solid rgba(255,255,255,0.08); background:rgba(15,23,42,0.6);">
-            @if (TunnelStatus.IsConnected)
-            {
-                <span>🟢 Túnel activo:
-                    <span style="color:#10b981; font-weight:600;">@TunnelStatus.TunnelUrl</span><span style="color:#e2e8f0;">/ingest/{slug}</span>
-                </span>
-                <button style="background:transparent; border:1px solid transparent; cursor:pointer; font-size:0.85rem; padding:0.15rem 0.4rem; border-radius:4px; line-height:1;"
-                        onmouseover="this.style.background='rgba(255,255,255,0.1)'"
-                        onmouseout="this.style.background='transparent'"
-                        onclick="clipboardHelper.copyText('@(TunnelStatus.TunnelUrl)/ingest/{slug}').then(function(){var b=event.target.closest('button');b.textContent='✅';setTimeout(function(){b.textContent='📋'},1500)})"
-                        title="Copiar URL completa">📋</button>
-            }
-            else
-            {
-                <span>🔴 @TunnelStatus.Status</span>
-                <a href="/configuracion" style="color:#6c63ff; text-decoration:none; font-weight:500; margin-left:0.5rem;">Configurar →</a>
-            }
-        </div>
-
-        <div class="content-wrapper">
+    @* ─── Contenido principal ─── *@
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="pa-6">
             @Body
-        </div>
-    </main>
-</div>
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
 
 @code {
+    private bool _drawerOpen = true;
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    private async Task CopyTunnelUrl()
+    {
+        var url = $"{TunnelStatus.TunnelUrl}/ingest/{{slug}}";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+    }
+
     protected override void OnInitialized()
     {
         TunnelStatus.OnStatusChanged += OnTunnelStatusChanged;
@@ -63,4 +85,28 @@
     {
         TunnelStatus.OnStatusChanged -= OnTunnelStatusChanged;
     }
+
+    private MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#6c63ff",
+            Secondary = "#a78bfa",
+            Success = "#10b981",
+            Warning = "#f59e0b",
+            Error = "#ef4444",
+            Background = "#0f0f1a",
+            Surface = "#16213e",
+            DrawerBackground = "#1a1a2e",
+            AppbarBackground = "#1a1a2e",
+            TextPrimary = "#e8e8f0",
+            TextSecondary = "#9ca3af",
+            ActionDefault = "#9ca3af",
+            DrawerText = "#9ca3af",
+            DrawerIcon = "#9ca3af",
+            LinesDefault = "rgba(255,255,255,0.08)",
+            TableLines = "rgba(255,255,255,0.08)",
+            Divider = "rgba(255,255,255,0.08)",
+        }
+    };
 }

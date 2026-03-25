@@ -7,83 +7,94 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Navigation
 
-<h1>📁 @(_isEditing ? "Editar Grupo" : _isCreating ? "Nuevo Grupo" : "Grupos de Tenants")</h1>
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Folder" Class="mr-2" />
+    @(_isEditing ? "Editar Grupo" : _isCreating ? "Nuevo Grupo" : "Grupos de Tenants")
+</MudText>
 
 @if (_isCreating || _isEditing)
 {
-    <div class="form-card">
-        <div class="form-group">
-            <label>Nombre del Grupo</label>
-            <input @bind="_form.Name" class="form-input" placeholder="Cliente 1" />
-        </div>
-        <div class="form-group">
-            <label>Política de Reintento <small>(se hereda a los tenants sin política propia)</small></label>
-            <select @bind="_form.RetryPolicyId" class="form-input">
-                <option value="0">— Usar política por defecto del sistema —</option>
+    <MudPaper Class="pa-6" MaxWidth="600px" Elevation="2">
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_form.Name" Label="Nombre del Grupo"
+                          Placeholder="Cliente 1" Variant="Variant.Outlined" />
+            <MudSelect T="int" @bind-Value="_form.RetryPolicyId" Label="Política de Reintento"
+                       HelperText="Se hereda a los tenants sin política propia"
+                       Variant="Variant.Outlined">
+                <MudSelectItem T="int" Value="0">— Usar política por defecto del sistema —</MudSelectItem>
                 @foreach (var p in _policies)
                 {
-                    <option value="@p.Id">@p.Name (@(p.Steps.Count) pasos)</option>
+                    <MudSelectItem T="int" Value="@p.Id">@p.Name (@(p.Steps.Count) pasos)</MudSelectItem>
                 }
-            </select>
-        </div>
-        <div class="form-actions">
-            <button type="button" class="btn btn-primary" @onclick="SaveGroup">💾 Guardar</button>
-            <a href="/grupos" class="btn btn-secondary">Cancelar</a>
-        </div>
+            </MudSelect>
 
-        @if (!string.IsNullOrEmpty(_errorMessage))
-        {
-            <div class="alert alert-danger">@_errorMessage</div>
-        }
-    </div>
+            <MudStack Row="true" Spacing="2" Class="mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save" OnClick="SaveGroup">
+                    Guardar
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Href="/grupos">Cancelar</MudButton>
+            </MudStack>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-2">@_errorMessage</MudAlert>
+            }
+        </MudStack>
+    </MudPaper>
 }
 else
 {
-    <div style="margin-bottom: 1rem;">
-        <a href="/grupos/create" class="btn btn-primary">➕ Nuevo Grupo</a>
-    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" Href="/grupos/create" Class="mb-4">
+        Nuevo Grupo
+    </MudButton>
 
     @if (_groups.Any())
     {
-        <div class="table-container">
-            <table class="data-table">
-                <thead>
+        <MudSimpleTable Hover="true" Dense="true" Elevation="2">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Política</th>
+                    <th>Tenants</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var g in _groups)
+                {
                     <tr>
-                        <th>Nombre</th>
-                        <th>Política</th>
-                        <th>Tenants</th>
-                        <th>Acciones</th>
+                        <td><strong>@g.Name</strong></td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                @(g.RetryPolicy?.Name ?? "Default del sistema")
+                            </MudChip>
+                        </td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">
+                                @g.Tenants.Count tenants
+                            </MudChip>
+                        </td>
+                        <td>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           Href="@($"/grupos/{g.Id}/edit")" />
+                            @if (g.Tenants.Count == 0)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                               Color="Color.Error" OnClick="() => DeleteGroup(g.Id)" />
+                            }
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach (var g in _groups)
-                    {
-                        <tr>
-                            <td><strong>@g.Name</strong></td>
-                            <td>
-                                <span class="badge badge-secondary">
-                                    @(g.RetryPolicy?.Name ?? "Default del sistema")
-                                </span>
-                            </td>
-                            <td>
-                                <span class="badge badge-success">@g.Tenants.Count tenants</span>
-                            </td>
-                            <td class="actions-cell">
-                                <a href="/grupos/@g.Id/edit" class="btn btn-sm btn-secondary">✏️</a>
-                                @if (g.Tenants.Count == 0)
-                                {
-                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteGroup(g.Id)">🗑️</button>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+                }
+            </tbody>
+        </MudSimpleTable>
     }
     else
     {
-        <p class="empty-state">No hay grupos configurados. ¡Crea el primero para agrupar tus tenants!</p>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No hay grupos configurados. ¡Crea el primero para agrupar tus tenants!
+        </MudAlert>
     }
 }
 
@@ -112,21 +123,12 @@ else
     private async Task HandleRouteAsync()
     {
         _errorMessage = null;
-
         if (_isEditing)
         {
             var editId = ExtractIdFromUri();
-            if (editId.HasValue)
-            {
-                Id = editId;
-                await LoadGroupForEdit(editId.Value);
-            }
+            if (editId.HasValue) { Id = editId; await LoadGroupForEdit(editId.Value); }
         }
-        else if (_isCreating)
-        {
-            _form = new GroupFormModel();
-        }
-
+        else if (_isCreating) { _form = new GroupFormModel(); }
         await LoadData();
     }
 
@@ -145,11 +147,7 @@ else
         var group = await db.TenantGroups.FindAsync(groupId);
         if (group is not null)
         {
-            _form = new GroupFormModel
-            {
-                Name = group.Name,
-                RetryPolicyId = group.RetryPolicyId ?? 0
-            };
+            _form = new GroupFormModel { Name = group.Name, RetryPolicyId = group.RetryPolicyId ?? 0 };
         }
     }
 
@@ -158,21 +156,15 @@ else
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         _groups = await db.TenantGroups
-            .Include(g => g.RetryPolicy)
-            .Include(g => g.Tenants)
-            .OrderBy(g => g.Name)
-            .ToListAsync();
+            .Include(g => g.RetryPolicy).Include(g => g.Tenants)
+            .OrderBy(g => g.Name).ToListAsync();
         _policies = await db.RetryPolicies.Include(p => p.Steps).OrderBy(p => p.Name).ToListAsync();
     }
 
     private async Task SaveGroup()
     {
         _errorMessage = null;
-        if (string.IsNullOrWhiteSpace(_form.Name))
-        {
-            _errorMessage = "El nombre es obligatorio.";
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(_form.Name)) { _errorMessage = "El nombre es obligatorio."; return; }
 
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
@@ -193,7 +185,6 @@ else
                 CreatedAt = DateTime.UtcNow
             });
         }
-
         await db.SaveChangesAsync();
         Navigation.NavigateTo("/grupos");
     }
@@ -203,11 +194,7 @@ else
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         var group = await db.TenantGroups.FindAsync(id);
-        if (group is not null)
-        {
-            db.TenantGroups.Remove(group);
-            await db.SaveChangesAsync();
-        }
+        if (group is not null) { db.TenantGroups.Remove(group); await db.SaveChangesAsync(); }
         await LoadData();
     }
 

@@ -5,60 +5,85 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject RedisQueueService Queue
 
-<h1>📊 Dashboard</h1>
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.BarChart" Class="mr-2" /> Dashboard
+</MudText>
 
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-value">@_totalTenants</div>
-        <div class="stat-label">Tenants Activos</div>
-    </div>
-    <div class="stat-card accent">
-        <div class="stat-value">@_pendingQueue</div>
-        <div class="stat-label">En Cola</div>
-    </div>
-    <div class="stat-card success">
-        <div class="stat-value">@_deliveredToday</div>
-        <div class="stat-label">Entregados Hoy</div>
-    </div>
-    <div class="stat-card danger">
-        <div class="stat-value">@_failedToday</div>
-        <div class="stat-label">Fallidos Hoy</div>
-    </div>
-</div>
+<MudGrid Class="mb-6">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3" Color="Color.Default">@_totalTenants</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">
+                Tenants Activos
+            </MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3" Color="Color.Primary">@_pendingQueue</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">
+                En Cola
+            </MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3" Color="Color.Success">@_deliveredToday</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">
+                Entregados Hoy
+            </MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h3" Color="Color.Error">@_failedToday</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase; letter-spacing: 0.05em;">
+                Fallidos Hoy
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
 
-<h2 style="margin-top: 2rem;">📋 Actividad Reciente</h2>
+<MudText Typo="Typo.h5" Class="mb-3">
+    <MudIcon Icon="@Icons.Material.Filled.List" Class="mr-2" /> Actividad Reciente
+</MudText>
 
 @if (_recentLogs.Any())
 {
-    <div class="table-container">
-        <table class="data-table">
-            <thead>
+    <MudSimpleTable Hover="true" Dense="true" Elevation="2">
+        <thead>
+            <tr>
+                <th>Tenant</th>
+                <th>Status</th>
+                <th>Intentos</th>
+                <th>Duración</th>
+                <th>Fecha</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var log in _recentLogs)
+            {
                 <tr>
-                    <th>Tenant</th>
-                    <th>Status</th>
-                    <th>Intentos</th>
-                    <th>Duración</th>
-                    <th>Fecha</th>
+                    <td>@log.Tenant.Name</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@GetChipColor(log.HttpStatusCode)">
+                            @log.HttpStatusCode
+                        </MudChip>
+                    </td>
+                    <td>@log.AttemptNumber</td>
+                    <td>@log.DurationMs ms</td>
+                    <td>@log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
                 </tr>
-            </thead>
-            <tbody>
-                @foreach (var log in _recentLogs)
-                {
-                    <tr>
-                        <td>@log.Tenant.Name</td>
-                        <td><span class="badge @GetBadgeClass(log.HttpStatusCode)">@log.HttpStatusCode</span></td>
-                        <td>@log.AttemptNumber</td>
-                        <td>@log.DurationMs ms</td>
-                        <td>@log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+            }
+        </tbody>
+    </MudSimpleTable>
 }
 else
 {
-    <p class="empty-state">Sin actividad reciente.</p>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        Sin actividad reciente.
+    </MudAlert>
 }
 
 @code {
@@ -87,11 +112,11 @@ else
             .ToListAsync();
     }
 
-    private string GetBadgeClass(int? statusCode) => statusCode switch
+    private Color GetChipColor(int? statusCode) => statusCode switch
     {
-        >= 200 and < 300 => "badge-success",
-        >= 300 and < 400 => "badge-warning",
-        >= 400 or 0 => "badge-danger",
-        _ => "badge-secondary"
+        >= 200 and < 300 => Color.Success,
+        >= 300 and < 400 => Color.Warning,
+        >= 400 or 0 => Color.Error,
+        _ => Color.Default
     };
 }

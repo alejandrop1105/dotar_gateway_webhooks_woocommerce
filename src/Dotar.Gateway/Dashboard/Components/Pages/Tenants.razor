@@ -10,126 +10,112 @@
 @inject NavigationManager Navigation
 @implements IDisposable
 
-<h1>🏢 @(_isEditing ? "Editar Tenant" : _isCreating ? "Nuevo Tenant" : "Tenants")</h1>
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Business" Class="mr-2" />
+    @(_isEditing ? "Editar Tenant" : _isCreating ? "Nuevo Tenant" : "Tenants")
+</MudText>
 
 @if (_isCreating || _isEditing)
 {
-    <div class="form-card">
-        <div class="form-group">
-            <label>Nombre</label>
-            <input @bind="_form.Name" class="form-input" placeholder="Mi Tienda WooCommerce" />
-        </div>
-        <div class="form-group">
-            <label>Slug <small>(usado en la URL: /ingest/{slug})</small></label>
-            <input @bind="_form.Slug" class="form-input" placeholder="mi-tienda" />
-        </div>
-        <div class="form-group">
-            <label>Webhook Secret <small>(de WooCommerce)</small></label>
-            <input @bind="_form.WebhookSecret" class="form-input" type="password" />
-        </div>
-        <div class="form-group">
-            <label>URL de Destino</label>
-            <input @bind="_form.TargetUrl" class="form-input" placeholder="https://mi-sistema.com/api/webhooks" />
-        </div>
-        <div class="form-group">
-            <label>Grupo</label>
-            <select @bind="_form.TenantGroupId" class="form-input">
-                <option value="0">— Sin grupo —</option>
+    <MudPaper Class="pa-6" MaxWidth="600px" Elevation="2">
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_form.Name" Label="Nombre"
+                          Placeholder="Mi Tienda WooCommerce" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_form.Slug" Label="Slug"
+                          HelperText="Usado en la URL: /ingest/{slug}"
+                          Placeholder="mi-tienda" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_form.WebhookSecret" Label="Webhook Secret"
+                          HelperText="De WooCommerce"
+                          InputType="InputType.Password" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_form.TargetUrl" Label="URL de Destino"
+                          Placeholder="https://mi-sistema.com/api/webhooks" Variant="Variant.Outlined" />
+            <MudSelect T="int" @bind-Value="_form.TenantGroupId" Label="Grupo" Variant="Variant.Outlined">
+                <MudSelectItem T="int" Value="0">— Sin grupo —</MudSelectItem>
                 @foreach (var g in _groups)
                 {
-                    <option value="@g.Id">@g.Name</option>
+                    <MudSelectItem T="int" Value="@g.Id">@g.Name</MudSelectItem>
                 }
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Política de Reintento</label>
-            <select @bind="_form.RetryPolicyId" class="form-input">
-                <option value="0">— Usar política por defecto —</option>
+            </MudSelect>
+            <MudSelect T="int" @bind-Value="_form.RetryPolicyId" Label="Política de Reintento" Variant="Variant.Outlined">
+                <MudSelectItem T="int" Value="0">— Usar política por defecto —</MudSelectItem>
                 @foreach (var p in _policies)
                 {
-                    <option value="@p.Id">@p.Name (@(p.Steps.Count) pasos)</option>
+                    <MudSelectItem T="int" Value="@p.Id">@p.Name (@(p.Steps.Count) pasos)</MudSelectItem>
                 }
-            </select>
-        </div>
-        <div class="form-group">
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="_form.IsActive" />
-                Activo
-            </label>
-        </div>
-        <div class="form-actions">
-            <button type="button" class="btn btn-primary" @onclick="SaveTenant">💾 Guardar</button>
-            <a href="/tenants" class="btn btn-secondary">Cancelar</a>
-        </div>
+            </MudSelect>
+            <MudSwitch @bind-Value="_form.IsActive" Color="Color.Success" Label="Activo" />
 
-        @if (!string.IsNullOrEmpty(_errorMessage))
-        {
-            <div class="alert alert-danger">@_errorMessage</div>
-        }
-    </div>
+            <MudStack Row="true" Spacing="2" Class="mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save" OnClick="SaveTenant">
+                    Guardar
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Href="/tenants">Cancelar</MudButton>
+            </MudStack>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-2">@_errorMessage</MudAlert>
+            }
+        </MudStack>
+    </MudPaper>
 }
-
 else
 {
-    <div style="margin-bottom: 1rem;">
-        <a href="/tenants/create" class="btn btn-primary">➕ Nuevo Tenant</a>
-    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" Href="/tenants/create" Class="mb-4">
+        Nuevo Tenant
+    </MudButton>
 
     @if (_tenants.Any())
     {
-        <div class="table-container">
-            <table class="data-table">
-                <thead>
+        <MudSimpleTable Hover="true" Dense="true" Elevation="2">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Grupo</th>
+                    <th>Slug</th>
+                    <th>URL Destino</th>
+                    <th>Política</th>
+                    <th>Estado</th>
+                    <th>URL Ingesta</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _tenants)
+                {
                     <tr>
-                        <th>Nombre</th>
-                        <th>Grupo</th>
-                        <th>Slug</th>
-                        <th>URL Destino</th>
-                        <th>Política</th>
-                        <th>Estado</th>
-                        <th>URL Ingesta</th>
-                        <th>Acciones</th>
+                        <td>@t.Name</td>
+                        <td><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@(t.TenantGroup?.Name ?? "—")</MudChip></td>
+                        <td><code>@t.Slug</code></td>
+                        <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@t.TargetUrl</td>
+                        <td><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@(t.RetryPolicy?.Name ?? "Default")</MudChip></td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(t.IsActive ? Color.Success : Color.Error)">
+                                @(t.IsActive ? "Activo" : "Inactivo")
+                            </MudChip>
+                        </td>
+                        <td><code>/ingest/@t.Slug</code></td>
+                        <td>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           Href="@($"/tenants/{t.Id}/edit")" />
+                            <MudIconButton Icon="@(t.IsActive ? Icons.Material.Filled.Pause : Icons.Material.Filled.PlayArrow)"
+                                           Size="Size.Small"
+                                           Color="@(t.IsActive ? Color.Error : Color.Success)"
+                                           OnClick="() => ToggleActive(t)" />
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach (var t in _tenants)
-                    {
-                        <tr>
-                            <td>@t.Name</td>
-                            <td>
-                                <span class="badge badge-secondary">
-                                    @(t.TenantGroup?.Name ?? "—")
-                                </span>
-                            </td>
-                            <td><code>@t.Slug</code></td>
-                            <td class="url-cell">@t.TargetUrl</td>
-                            <td>
-                                <span class="badge badge-secondary">
-                                    @(t.RetryPolicy?.Name ?? "Default")
-                                </span>
-                            </td>
-                            <td>
-                                <span class="badge @(t.IsActive ? "badge-success" : "badge-danger")">
-                                    @(t.IsActive ? "Activo" : "Inactivo")
-                                </span>
-                            </td>
-                            <td class="url-cell"><code>/ingest/@t.Slug</code></td>
-                            <td class="actions-cell">
-                                <a href="/tenants/@t.Id/edit" class="btn btn-sm btn-secondary">✏️</a>
-                                <button class="btn btn-sm @(t.IsActive ? "btn-danger" : "btn-success")"
-                                        @onclick="() => ToggleActive(t)">
-                                    @(t.IsActive ? "⏸️" : "▶️")
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+                }
+            </tbody>
+        </MudSimpleTable>
     }
     else
     {
-        <p class="empty-state">No hay tenants configurados. ¡Crea el primero!</p>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No hay tenants configurados. ¡Crea el primero!
+        </MudAlert>
     }
 }
 
@@ -160,16 +146,11 @@ else
         });
     }
 
-    /// <summary>
-    /// Maneja la ruta actual: carga tenant para edit, resetea form para create, o carga lista.
-    /// </summary>
     private async Task HandleRouteAsync()
     {
         _errorMessage = null;
-
         if (_isEditing)
         {
-            // Extraer ID desde la URL: /tenants/{id}/edit
             var editId = ExtractIdFromUri();
             if (editId.HasValue)
             {
@@ -181,7 +162,6 @@ else
         {
             _form = new TenantFormModel();
         }
-
         await LoadTenants();
     }
 
@@ -189,7 +169,7 @@ else
     {
         var uri = Navigation.Uri;
         var match = System.Text.RegularExpressions.Regex.Match(uri, @"/tenants/(\d+)/edit",
-System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         return match.Success && int.TryParse(match.Groups[1].Value, out var id) ? id : null;
     }
 
@@ -213,10 +193,7 @@ System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         }
     }
 
-    public void Dispose()
-    {
-        Navigation.LocationChanged -= OnLocationChanged;
-    }
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
 
     private async Task LoadTenants()
     {
@@ -230,11 +207,9 @@ System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         _groups = await db.TenantGroups.OrderBy(g => g.Name).ToListAsync();
     }
 
-
     private async Task SaveTenant()
     {
         _errorMessage = null;
-
         if (string.IsNullOrWhiteSpace(_form.Name) ||
             string.IsNullOrWhiteSpace(_form.Slug) ||
             string.IsNullOrWhiteSpace(_form.WebhookSecret) ||
@@ -251,7 +226,6 @@ System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         {
             var tenant = await db.Tenants.FindAsync(Id.Value);
             if (tenant is null) return;
-
             var oldSlug = tenant.Slug;
             tenant.Name = _form.Name;
             tenant.Slug = _form.Slug.ToLowerInvariant().Trim();
@@ -261,10 +235,8 @@ System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             tenant.RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId;
             tenant.TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId;
             tenant.UpdatedAt = DateTime.UtcNow;
-
             CacheService.Invalidate(oldSlug);
-            if (oldSlug != tenant.Slug)
-                CacheService.Invalidate(tenant.Slug);
+            if (oldSlug != tenant.Slug) CacheService.Invalidate(tenant.Slug);
         }
         else
         {
@@ -274,20 +246,15 @@ System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 _errorMessage = $"El slug '{slug}' ya está en uso.";
                 return;
             }
-
             db.Tenants.Add(new Tenant
             {
-                Name = _form.Name,
-                Slug = slug,
-                WebhookSecret = _form.WebhookSecret,
-                TargetUrl = _form.TargetUrl,
-                IsActive = _form.IsActive,
+                Name = _form.Name, Slug = slug, WebhookSecret = _form.WebhookSecret,
+                TargetUrl = _form.TargetUrl, IsActive = _form.IsActive,
                 RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
                 TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId,
                 CreatedAt = DateTime.UtcNow
             });
         }
-
         await db.SaveChangesAsync();
         Navigation.NavigateTo("/tenants");
     }
@@ -298,11 +265,9 @@ System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         var entity = await db.Tenants.FindAsync(tenant.Id);
         if (entity is null) return;
-
         entity.IsActive = !entity.IsActive;
         entity.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
-
         CacheService.Invalidate(entity.Slug);
         await LoadTenants();
     }
