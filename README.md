@@ -3,6 +3,7 @@
 <div align="center">
 
 ![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet)
+![MudBlazor](https://img.shields.io/badge/MudBlazor-v8-7B1FA2?style=for-the-badge)
 ![Blazor Server](https://img.shields.io/badge/Blazor-Server-512BD4?style=for-the-badge&logo=blazor)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite)
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis)
@@ -124,12 +125,13 @@ Dotar Gateway es un **servicio intermediario** que se posiciona entre WooCommerc
 - **Acciones**: reenvío manual (genera un nuevo intento), reenvío masivo, eliminación individual/masiva
 - **Copiar payload**: botón para copiar el payload JSON al portapapeles
 
-### 🎨 Dashboard UI
+### 🎨 Dashboard UI (MudBlazor v8)
 
-- **Diseño dark-mode premium** con tipografía Inter
-- **Sidebar colapsable** con ícono hamburguesa — oculta/muestra el menú de navegación
-- **Botón flotante ☰** para reabrir el sidebar cuando está oculto
-- **Indicador de túnel** en la barra superior (estado de conexión Cloudflare)
+- **MudBlazor v8** — Componentes Material Design nativos (MudDataGrid, MudTimeline, MudTextField, etc.)
+- **Tema dark custom** con paleta personalizada (`#6c63ff` primary, `#10b981` success, `#ef4444` error)
+- **MudDrawer colapsable** con hamburger nativo en MudAppBar
+- **Iconos Material Design** SVG nativos en sidebar y acciones
+- **Indicador de túnel** en la barra superior (MudChip con estado de conexión Cloudflare)
 - **Responsive** y optimizado para uso continuo
 
 ### 🔒 Seguridad
@@ -343,57 +345,58 @@ Desde el Dashboard → **Monitor**:
 
 ---
 
-## 📊 Dashboard
+## 📊 Dashboard (MudBlazor v8)
 
-El Dashboard es una SPA Blazor Server con las siguientes secciones:
+El Dashboard es una SPA Blazor Server con componentes **MudBlazor v8** (Material Design) y las siguientes secciones:
 
 ### 📊 Home (`/`)
 
-Resumen general: tenants activos, webhooks en cola, entregados/fallidos hoy, actividad reciente con tabla de últimos webhooks.
+Resumen general con cards MudPaper: tenants activos, webhooks en cola, entregados/fallidos hoy, actividad reciente con MudSimpleTable.
 
 ### 🏢 Tenants (`/tenants`)
 
-CRUD completo de tenants. Cada tenant define una tienda WooCommerce con su configuración de reenvío. Se puede asignar un grupo y una política de reintento individual o heredada del grupo.
+CRUD completo de tenants con MudTextField, MudSelect, MudSwitch. Cada tenant define una tienda WooCommerce con su configuración de reenvío. Se puede asignar un grupo y una política de reintento individual o heredada del grupo.
 
 ### 📂 Grupos (`/grupos`)
 
-Administración de grupos lógicos de tenants. Cada grupo puede tener una política de reintento que es heredada por todos sus tenants que no tengan una política propia configurada.
+Administración de grupos lógicos de tenants con MudSimpleTable y MudSelect. Cada grupo puede tener una política de reintento heredada por todos sus tenants.
 
 ### 🔄 Políticas de Reintento (`/politicas`)
 
-Editor visual de políticas con pasos configurables. Cada paso define su delay y unidad de tiempo. Incluye vista previa de timeline acumulada. Política "Estándar" incluida por defecto.
+Editor visual con MudNumericField y MudSelect para cada paso. Incluye **MudTimeline** con vista previa acumulada de los reintentos. Política "Estándar" incluida por defecto.
 
 ### 📡 Monitor (`/monitor`)
 
-Vista en tiempo real de todos los logs de entrega. Filtros por tenant y status. Muestra estado, intentos, duración, fecha, y hora del próximo reintento para webhooks pendientes. Acciones: ver detalle, reenviar, eliminar (individual y masivo con checkboxes).
+Vista en tiempo real con MudSimpleTable, MudCheckBox para selección múltiple, MudSelect para filtros por tenant y status. Muestra estado (MudChip), intentos, duración, fecha, y hora del próximo reintento. Acciones: ver detalle, reenviar, eliminar (individual y masivo).
 
 ### 📋 Detalle de Webhook (`/monitor/{id}`)
 
-Vista completa de un webhook individual:
-- Info del tenant y URL destino
-- Estado actual y número de intentos
-- **Historial de todos los intentos** con:
+Vista completa de un webhook individual con cards de igual altura:
+- **URL Origen** (sitio WooCommerce que generó el evento) y **URL Destino**
+- Estado actual, número de intentos y fecha de recepción
+- **MudTimeline** con historial de todos los intentos:
   - Número de intento secuencial
   - Código HTTP y duración
   - Descripción del error (si aplica)
-  - Badge de origen: 🤖 Auto / 👤 Manual
+  - Badge de origen: Auto OK / Manual
   - Fecha y hora
 - **Payload JSON** formateado con botón **📋 Copiar** al portapapeles
 - Acción de reenvío manual
 
 ### ⚙️ Configuración (`/configuracion`)
 
-Credenciales de Cloudflare para el túnel HTTPS automático: API Token, Zona DNS, y subdominio.
+Credenciales de Cloudflare con MudTextField (con InputType.Password para API Token), MudButton y MudAlert para feedback.
 
 ---
 
 ## 🔗 API Endpoints
 
-| Método | Ruta                                    | Descripción                   |
-| ------ | --------------------------------------- | ----------------------------- |
-| `POST` | `/ingest/{slug}`                        | Recibe webhook de WooCommerce |
-| `POST` | `/api/retry/{deliveryLogId}`            | Reenvío manual de un webhook  |
-| `GET`  | `/health`                               | Health check                  |
+| Método | Ruta                                    | Descripción                             |
+| ------ | --------------------------------------- | --------------------------------------- |
+| `POST` | `/ingest/{slug}`                        | Recibe webhook de WooCommerce           |
+| `PUT`  | `/api/tenants/{slug}/target-url`        | Actualiza la URL de destino de un tenant |
+| `GET`  | `/api/tenants/{slug}`                   | Obtiene info de un tenant por slug       |
+| `GET`  | `/health`                               | Health check                            |
 
 ### Ejemplo de ingesta
 
@@ -403,6 +406,57 @@ curl -X POST https://tu-dominio.com/ingest/mi-tienda \
   -H "X-WC-Webhook-Signature: <hmac-sha256-base64>" \
   -d '{"id": 123, "status": "processing"}'
 ```
+
+### Actualizar URL destino de un tenant
+
+Endpoint para que sistemas externos actualicen la URL de destino de un tenant sin usar el dashboard:
+
+```bash
+curl -X PUT https://tu-dominio.com/api/tenants/mi-tienda/target-url \
+  -H "Content-Type: application/json" \
+  -d '{"targetUrl": "https://nuevo-destino.com/api/webhooks"}'
+```
+
+**Respuesta exitosa (200):**
+```json
+{
+  "slug": "mi-tienda",
+  "name": "Mi Tienda",
+  "targetUrl": "https://nuevo-destino.com/api/webhooks",
+  "previousUrl": "https://viejo-destino.com/api/webhooks",
+  "updatedAt": "2026-03-24T05:38:00Z"
+}
+```
+
+**Validaciones:**
+- URL debe ser `http://` o `https://` válida → `400 Bad Request`
+- Slug no existe → `404 Not Found`
+- El caché se invalida automáticamente tras la actualización
+
+### Consultar info de un tenant
+
+```bash
+curl https://tu-dominio.com/api/tenants/mi-tienda
+```
+
+**Respuesta (200):**
+```json
+{
+  "slug": "mi-tienda",
+  "name": "Mi Tienda",
+  "targetUrl": "https://mi-api.com/webhooks",
+  "isActive": true,
+  "createdAt": "2026-03-20T15:00:00Z",
+  "updatedAt": "2026-03-24T05:38:00Z"
+}
+```
+
+### Headers capturados en la ingesta
+
+| Header                     | Descripción                                         |
+| -------------------------- | --------------------------------------------------- |
+| `X-WC-Webhook-Signature`   | Firma HMAC-SHA256 para validación de autenticidad    |
+| `X-WC-Webhook-Source`      | URL del sitio WooCommerce origen (se registra como SourceUrl) |
 
 ### Headers enviados al destino
 
@@ -538,7 +592,8 @@ dotar-gateway/
 │   │       └── ForwardResult.cs       # Resultado de reenvío
 │   │
 │   ├── Endpoints/
-│   │   └── IngestEndpoints.cs          # POST /ingest/{slug}
+│   │   ├── IngestEndpoints.cs          # POST /ingest/{slug}
+│   │   └── TenantApiEndpoints.cs       # PUT/GET /api/tenants/{slug}
 │   │
 │   ├── Infrastructure/
 │   │   ├── Data/
@@ -560,8 +615,7 @@ dotar-gateway/
 │   │
 │   ├── Migrations/                     # EF Core (auto-apply)
 │   ├── wwwroot/
-│   │   ├── css/app.css                 # Estilos dark-mode premium
-│   │   └── js/dashboard.js            # JS interop (clipboard, sidebar)
+│   │   └── css/app.css                 # Overrides mínimos (~50 líneas)
 │   └── Program.cs                      # DI y configuración
 │
 └── tests/
@@ -604,6 +658,8 @@ dotar-gateway/
 │ TenantId     │
 │ Status       │
 │ Payload      │
+│ SourceUrl    │
+│ TargetUrl    │
 │ RetryCount   │
 │ NextRetryAt  │
 │ CreatedAt    │
