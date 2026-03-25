@@ -58,11 +58,13 @@ public static class IngestEndpoints
 
         // 4. Encolar en Redis
         var payload = System.Text.Encoding.UTF8.GetString(body);
+        var sourceUrl = request.Headers["X-WC-Webhook-Source"].FirstOrDefault();
         await queue.EnqueueAsync(new QueuedWebhook
         {
             TenantId = tenant.Id,
             TenantSlug = tenant.Slug,
             TargetUrl = tenant.TargetUrl,
+            SourceUrl = sourceUrl,
             Payload = payload,
             ReceivedAt = DateTime.UtcNow
         });

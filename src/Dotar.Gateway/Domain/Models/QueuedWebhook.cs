@@ -8,6 +8,7 @@ public class QueuedWebhook
     public int TenantId { get; set; }
     public string TenantSlug { get; set; } = string.Empty;
     public string TargetUrl { get; set; } = string.Empty;
+    public string? SourceUrl { get; set; }
     public string Payload { get; set; } = string.Empty;
     public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
 }

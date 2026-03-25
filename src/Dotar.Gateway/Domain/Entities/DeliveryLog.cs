@@ -31,6 +31,10 @@ public class DeliveryLog
     public Guid WebhookEventId { get; set; } = Guid.NewGuid();
 
     public string? Payload { get; set; }
+
+    /// <summary>URL de origen del webhook (sitio que generó el evento).</summary>
+    public string? SourceUrl { get; set; }
+
     public string? TargetUrl { get; set; }
     public int? HttpStatusCode { get; set; }
     public int AttemptNumber { get; set; } = 1;

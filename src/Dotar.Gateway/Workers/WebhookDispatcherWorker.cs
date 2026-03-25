@@ -364,6 +364,7 @@ public class WebhookDispatcherWorker : BackgroundService
                 Payload = webhook.Payload.Length > 50000
                     ? webhook.Payload[..50000] + "...[truncated]"
                     : webhook.Payload,
+                SourceUrl = webhook.SourceUrl,
                 TargetUrl = webhook.TargetUrl,
                 HttpStatusCode = result.StatusCode,
                 AttemptNumber = attemptNumber,
