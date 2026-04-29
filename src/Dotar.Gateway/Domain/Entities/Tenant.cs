@@ -1,7 +1,7 @@
 namespace Dotar.Gateway.Domain.Entities;
 
 /// <summary>
-/// Representa un tenant (instancia WooCommerce) registrado en el Gateway.
+/// Representa un tenant (sistema origen de webhooks) registrado en el Gateway.
 /// El slug se usa en la URL de ingesta: POST /ingest/{slug}
 /// </summary>
 public class Tenant
@@ -12,6 +12,15 @@ public class Tenant
     public string WebhookSecret { get; set; } = string.Empty;
     public string TargetUrl { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+
+    /// <summary>Esquema HMAC del sistema origen.</summary>
+    public SignatureScheme SignatureScheme { get; set; } = SignatureScheme.WooCommerce;
+
+    /// <summary>
+    /// Header donde el origen envía la firma. Si null, se usa el header default del esquema.
+    /// Útil principalmente para SignatureScheme.Generic.
+    /// </summary>
+    public string? SignatureHeader { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 

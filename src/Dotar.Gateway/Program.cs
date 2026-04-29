@@ -36,11 +36,13 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 // ─── Servicios de Infraestructura ─────────────────────
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<HmacSignatureValidator>();
+builder.Services.AddSingleton<ApiKeyService>();
 builder.Services.AddSingleton<RedisQueueService>();
 builder.Services.AddSingleton<TenantCacheService>();
 builder.Services.AddSingleton<TunnelStatusService>();
 builder.Services.AddSingleton<MonitorNotificationService>();
 builder.Services.AddTransient<ForwardingService>();
+builder.Services.AddScoped<Dotar.Gateway.Endpoints.ApiKeyEndpointFilter>();
 
 // ─── HttpClientFactory para reenvío ───────────────────
 builder.Services.AddHttpClient("GatewayForwarder", client =>
@@ -71,6 +73,9 @@ using (var scope = app.Services.CreateScope())
     // Habilitar WAL mode para alto rendimiento
     await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
 }
+
+// ─── Garantizar API Key del Gateway ───────────────────
+await app.Services.GetRequiredService<ApiKeyService>().EnsureInitializedAsync();
 
 // ─── Middleware Pipeline ──────────────────────────────
 app.UseStaticFiles();

@@ -38,7 +38,7 @@ public class TunnelStartupService : BackgroundService
             var apiToken = await GetSettingAsync(db, "Cloudflare:ApiToken");
             var accountId = await GetSettingAsync(db, "Cloudflare:AccountId");
             var zoneId = await GetSettingAsync(db, "Cloudflare:ZoneId");
-            var tunnelName = await GetSettingAsync(db, "Cloudflare:TunnelName") ?? "woocommerce-gateway";
+            var tunnelName = await GetSettingAsync(db, "Cloudflare:TunnelName") ?? "webhooks-gateway";
             var domain = await GetSettingAsync(db, "Cloudflare:Domain") ?? "dotarsoluciones.com";
 
             // Si no hay credenciales, no intentar conectar

@@ -20,15 +20,30 @@
     <MudPaper Class="pa-6" MaxWidth="600px" Elevation="2">
         <MudStack Spacing="3">
             <MudTextField @bind-Value="_form.Name" Label="Nombre"
-                          Placeholder="Mi Tienda WooCommerce" Variant="Variant.Outlined" />
+                          Placeholder="Mi Sistema Origen" Variant="Variant.Outlined" />
             <MudTextField @bind-Value="_form.Slug" Label="Slug"
                           HelperText="Usado en la URL: /ingest/{slug}"
-                          Placeholder="mi-tienda" Variant="Variant.Outlined" />
+                          Placeholder="mi-sistema" Variant="Variant.Outlined" />
             <MudTextField @bind-Value="_form.WebhookSecret" Label="Webhook Secret"
-                          HelperText="De WooCommerce"
-                          InputType="InputType.Password" Variant="Variant.Outlined" />
+                          HelperText="Secret HMAC del sistema origen (Opcional)"
+                          InputType="@(_showSecret ? InputType.Text : InputType.Password)" 
+                          Adornment="Adornment.End" 
+                          AdornmentIcon="@(_showSecret ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                          OnAdornmentClick="@(() => _showSecret = !_showSecret)"
+                          Variant="Variant.Outlined" />
             <MudTextField @bind-Value="_form.TargetUrl" Label="URL de Destino"
                           Placeholder="https://mi-sistema.com/api/webhooks" Variant="Variant.Outlined" />
+            <MudSelect T="SignatureScheme" @bind-Value="_form.SignatureScheme"
+                       Label="Esquema de firma" Variant="Variant.Outlined"
+                       HelperText="Define qué header y formato usa el sistema origen">
+                <MudSelectItem T="SignatureScheme" Value="SignatureScheme.WooCommerce">WooCommerce (X-WC-Webhook-Signature, base64)</MudSelectItem>
+                <MudSelectItem T="SignatureScheme" Value="SignatureScheme.GitHub">GitHub (X-Hub-Signature-256, sha256=hex)</MudSelectItem>
+                <MudSelectItem T="SignatureScheme" Value="SignatureScheme.Generic">Genérico (header configurable, hex)</MudSelectItem>
+                <MudSelectItem T="SignatureScheme" Value="SignatureScheme.None">Sin validación (no recomendado)</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="_form.SignatureHeader" Label="Header de firma (opcional)"
+                          HelperText="Override del header esperado. Si vacío, se usa el default del esquema."
+                          Placeholder="X-Webhook-Signature" Variant="Variant.Outlined" />
             <MudSelect T="int" @bind-Value="_form.TenantGroupId" Label="Grupo" Variant="Variant.Outlined">
                 <MudSelectItem T="int" Value="0">— Sin grupo —</MudSelectItem>
                 @foreach (var g in _groups)
@@ -127,6 +142,7 @@ else
     private List<TenantGroup> _groups = [];
     private TenantFormModel _form = new();
     private string? _errorMessage;
+    private bool _showSecret = false;
 
     private bool _isCreating => Navigation.Uri.EndsWith("/create", StringComparison.OrdinalIgnoreCase);
     private bool _isEditing => Navigation.Uri.Contains("/edit", StringComparison.OrdinalIgnoreCase);
@@ -187,6 +203,8 @@ else
                 WebhookSecret = tenant.WebhookSecret,
                 TargetUrl = tenant.TargetUrl,
                 IsActive = tenant.IsActive,
+                SignatureScheme = tenant.SignatureScheme,
+                SignatureHeader = tenant.SignatureHeader ?? string.Empty,
                 RetryPolicyId = tenant.RetryPolicyId ?? 0,
                 TenantGroupId = tenant.TenantGroupId ?? 0
             };
@@ -212,7 +230,6 @@ else
         _errorMessage = null;
         if (string.IsNullOrWhiteSpace(_form.Name) ||
             string.IsNullOrWhiteSpace(_form.Slug) ||
-            string.IsNullOrWhiteSpace(_form.WebhookSecret) ||
             string.IsNullOrWhiteSpace(_form.TargetUrl))
         {
             _errorMessage = "Todos los campos son obligatorios.";
@@ -232,6 +249,8 @@ else
             tenant.WebhookSecret = _form.WebhookSecret;
             tenant.TargetUrl = _form.TargetUrl;
             tenant.IsActive = _form.IsActive;
+            tenant.SignatureScheme = _form.SignatureScheme;
+            tenant.SignatureHeader = string.IsNullOrWhiteSpace(_form.SignatureHeader) ? null : _form.SignatureHeader.Trim();
             tenant.RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId;
             tenant.TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId;
             tenant.UpdatedAt = DateTime.UtcNow;
@@ -250,6 +269,8 @@ else
             {
                 Name = _form.Name, Slug = slug, WebhookSecret = _form.WebhookSecret,
                 TargetUrl = _form.TargetUrl, IsActive = _form.IsActive,
+                SignatureScheme = _form.SignatureScheme,
+                SignatureHeader = string.IsNullOrWhiteSpace(_form.SignatureHeader) ? null : _form.SignatureHeader.Trim(),
                 RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
                 TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId,
                 CreatedAt = DateTime.UtcNow
@@ -279,6 +300,8 @@ else
         public string WebhookSecret { get; set; } = string.Empty;
         public string TargetUrl { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
+        public SignatureScheme SignatureScheme { get; set; } = SignatureScheme.WooCommerce;
+        public string SignatureHeader { get; set; } = string.Empty;
         public int RetryPolicyId { get; set; }
         public int TenantGroupId { get; set; }
     }

@@ -8,7 +8,7 @@ namespace Dotar.Gateway.Infrastructure.Tunnel;
 public class CloudflareConfig
 {
     /// <summary>
-    /// Nombre del túnel/subdominio. Ej: "woocommerce-gateway"
+    /// Nombre del túnel/subdominio. Ej: "webhooks-gateway"
     /// </summary>
     public string TunnelName { get; set; } = string.Empty;
 
@@ -50,7 +50,7 @@ public class CloudflareConfig
     }
 
     /// <summary>
-    /// Hostname completo calculado. Ej: "woocommerce-gateway.dotarsoluciones.com"
+    /// Hostname completo calculado. Ej: "webhooks-gateway.dotarsoluciones.com"
     /// </summary>
     public string Hostname => $"{TunnelName}.{CleanDomain}";
 

@@ -1,3 +1,4 @@
+using Dotar.Gateway.Domain.Entities;
 using Dotar.Gateway.Domain.Models;
 using Dotar.Gateway.Infrastructure.Services;
 
@@ -13,7 +14,7 @@ public static class IngestEndpoints
     {
         app.MapPost("/ingest/{slug}", HandleIngest)
             .WithName("IngestWebhook")
-            .WithSummary("Recibe webhook de WooCommerce para un tenant específico")
+            .WithSummary("Recibe webhook entrante para un tenant específico")
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status401Unauthorized);
 
@@ -48,12 +49,26 @@ public static class IngestEndpoints
             return Results.Unauthorized();
         }
 
-        // 3. Validar firma HMAC-SHA256
-        var signature = request.Headers["X-WC-Webhook-Signature"].FirstOrDefault();
-        if (string.IsNullOrEmpty(signature) || !validator.Validate(tenant.WebhookSecret, body, signature))
+        // 3. Validar firma HMAC-SHA256 según el esquema del tenant
+        if (tenant.SignatureScheme == SignatureScheme.None)
         {
-            logger.LogWarning("Webhook rechazado: firma inválida para tenant '{Slug}'", slug);
-            return Results.Unauthorized();
+            logger.LogWarning("Tenant '{Slug}' no tiene validación de firma habilitada", slug);
+        }
+        else if (string.IsNullOrEmpty(tenant.WebhookSecret))
+        {
+            logger.LogInformation("Tenant '{Slug}' no tiene secret configurado, saltando validación HMAC", slug);
+        }
+        else
+        {
+            var headerName = HmacSignatureValidator.ResolveHeader(tenant.SignatureScheme, tenant.SignatureHeader);
+            var signature = request.Headers[headerName].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature) ||
+                !validator.Validate(tenant.SignatureScheme, tenant.WebhookSecret, body, signature))
+            {
+                logger.LogWarning("Webhook rechazado: firma inválida para tenant '{Slug}' (esquema {Scheme}, header {Header})",
+                    slug, tenant.SignatureScheme, headerName);
+                return Results.Unauthorized();
+            }
         }
 
         // 4. Encolar en Redis

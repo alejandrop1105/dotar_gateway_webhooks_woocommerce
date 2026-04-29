@@ -6,6 +6,8 @@
 @using Microsoft.EntityFrameworkCore
 @inject IServiceScopeFactory ScopeFactory
 @inject TunnelStatusService TunnelStatus
+@inject ApiKeyService ApiKey
+@inject IJSRuntime JS
 @inject ILogger<Configuracion> Logger
 
 <MudText Typo="Typo.h4" Class="mb-4">
@@ -18,7 +20,7 @@
     </MudText>
     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
         Configurá las credenciales de Cloudflare para crear un túnel que permita
-        acceso externo al Gateway desde <strong>woocommerce-gateway.dotarsoluciones.com</strong>
+        acceso externo al Gateway desde <strong>@($"{_tunnelName}.{_domain}")</strong>
     </MudText>
 
     <MudStack Spacing="3">
@@ -63,6 +65,45 @@
     </MudStack>
 </MudPaper>
 
+<MudPaper Class="pa-6 mt-6" MaxWidth="700px" Elevation="2">
+    <MudText Typo="Typo.h5" Class="mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.Key" Class="mr-2" /> API Key del Gateway
+    </MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+        Header <code>X-Gateway-Api-Key</code> requerido para las llamadas a <code>/api/tenants/*</code>
+        desde sistemas externos. Tratala como un secret.
+    </MudText>
+
+    <MudStack Spacing="3">
+        <MudTextField Value="_apiKey" Label="API Key actual" ReadOnly="true"
+                      InputType="@(_showApiKey ? InputType.Text : InputType.Password)"
+                      Adornment="Adornment.End"
+                      AdornmentIcon="@(_showApiKey ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                      OnAdornmentClick="@(() => _showApiKey = !_showApiKey)"
+                      Variant="Variant.Outlined" />
+
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyApiKey">
+                Copiar
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                       StartIcon="@Icons.Material.Filled.Refresh" OnClick="RegenerateApiKey"
+                       Disabled="_isRegenerating">
+                @(_isRegenerating ? "Regenerando..." : "Regenerar")
+            </MudButton>
+        </MudStack>
+
+        @if (!string.IsNullOrEmpty(_apiKeyMessage))
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-2"
+                      ShowCloseIcon="true" CloseIconClicked="() => _apiKeyMessage = null">
+                @_apiKeyMessage
+            </MudAlert>
+        }
+    </MudStack>
+</MudPaper>
+
 @if (TunnelStatus.IsConnected)
 {
     <MudPaper Class="pa-6 mt-6" MaxWidth="700px" Elevation="2">
@@ -91,7 +132,7 @@
     private string _apiToken = string.Empty;
     private string _accountId = string.Empty;
     private string _zoneId = string.Empty;
-    private string _tunnelName = "woocommerce-gateway";
+    private string _tunnelName = "webhooks-gateway";
     private string _domain = "dotarsoluciones.com";
     private bool _isSaving;
     private bool _isCreatingTunnel;
@@ -99,7 +140,36 @@
     private string? _message;
     private string _messageClass = "alert-success";
 
-    protected override async Task OnInitializedAsync() => await LoadConfig();
+    private string _apiKey = string.Empty;
+    private bool _showApiKey;
+    private bool _isRegenerating;
+    private string? _apiKeyMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConfig();
+        _apiKey = ApiKey.GetCurrent() ?? string.Empty;
+    }
+
+    private async Task CopyApiKey()
+    {
+        if (string.IsNullOrEmpty(_apiKey)) return;
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", _apiKey);
+        _apiKeyMessage = "API Key copiada al portapapeles.";
+    }
+
+    private async Task RegenerateApiKey()
+    {
+        _isRegenerating = true;
+        _apiKeyMessage = null;
+        try
+        {
+            _apiKey = await ApiKey.RegenerateAsync();
+            _showApiKey = true;
+            _apiKeyMessage = "API Key regenerada. Asegurate de actualizar los sistemas externos que la usen.";
+        }
+        finally { _isRegenerating = false; }
+    }
 
     private async Task LoadConfig()
     {
@@ -108,7 +178,7 @@
         _apiToken = await GetSettingAsync(db, "Cloudflare:ApiToken") ?? string.Empty;
         _accountId = await GetSettingAsync(db, "Cloudflare:AccountId") ?? string.Empty;
         _zoneId = await GetSettingAsync(db, "Cloudflare:ZoneId") ?? string.Empty;
-        _tunnelName = await GetSettingAsync(db, "Cloudflare:TunnelName") ?? "woocommerce-gateway";
+        _tunnelName = await GetSettingAsync(db, "Cloudflare:TunnelName") ?? "webhooks-gateway";
         _domain = await GetSettingAsync(db, "Cloudflare:Domain") ?? "dotarsoluciones.com";
         _isConfigured = !string.IsNullOrWhiteSpace(_apiToken)
             && !string.IsNullOrWhiteSpace(_accountId)

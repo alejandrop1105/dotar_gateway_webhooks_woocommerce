@@ -77,6 +77,11 @@ public class GatewayDbContext : DbContext
             e.Property(t => t.Slug).IsRequired().HasMaxLength(100);
             e.Property(t => t.WebhookSecret).IsRequired().HasMaxLength(500);
             e.Property(t => t.TargetUrl).IsRequired().HasMaxLength(2000);
+            e.Property(t => t.SignatureScheme)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasDefaultValue(Domain.Entities.SignatureScheme.WooCommerce);
+            e.Property(t => t.SignatureHeader).HasMaxLength(200);
             e.HasOne(t => t.RetryPolicy)
                 .WithMany(p => p.Tenants)
                 .HasForeignKey(t => t.RetryPolicyId)
