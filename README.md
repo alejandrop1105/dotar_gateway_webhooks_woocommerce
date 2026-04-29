@@ -26,6 +26,7 @@
 - [Funcionalidad](#-funcionalidad)
   - [Pipeline de un webhook](#pipeline-de-un-webhook)
   - [Esquemas HMAC soportados](#esquemas-hmac-soportados)
+  - [Propagación de headers](#-propagación-de-headers)
   - [Políticas de reintento](#políticas-de-reintento)
   - [Multi-tenant y grupos](#multi-tenant-y-grupos)
 - [Arquitectura](#-arquitectura)
@@ -88,6 +89,7 @@ Cuando una plataforma emite webhooks (WooCommerce, GitHub, Stripe, Shopify, Merc
 | Si tu API se cae, el webhook se pierde                                | Cola Redis + scheduler que reintenta hasta agotar la política    |
 | No hay visibilidad de qué llegó y qué falló                           | Dashboard con historial completo por webhook                     |
 | Cada plataforma tiene su esquema HMAC distinto                        | Esquemas configurables por tenant (WooCommerce/GitHub/Generic)   |
+| Los headers del provider se pierden y rompen el procesamiento         | Propagación verbatim de todos los `X-*` (topic, signature, delivery-id, …) |
 | Tu sistema interno no debería estar expuesto a internet               | Cloudflare Tunnel: HTTPS automático, sin abrir puertos           |
 | Múltiples sistemas origen requieren múltiples integraciones           | Un solo Gateway, N tenants agrupables, configuración unificada   |
 | Los destinos cambian (migración, blue/green) y hay que reconfigurar   | API REST para actualizar URL destino sin tocar el origen         |
@@ -110,8 +112,9 @@ El Gateway funciona como **buffer y traductor entre productores y consumidores d
                 ② lookup tenant (caché en memoria)                            │
                 ③ validar HMAC según SignatureScheme                          │
                 ④ encolar en Redis (200 OK al origen)                         │ ⑦
-                ⑤ worker dequeue (background)                                 │ POST
-                ⑥ POST al TargetUrl con headers + Polly                       │
+                ⑤ filtrar y persistir headers X-* del provider               │ POST + headers
+                ⑥ worker dequeue (background)                                 │ X-* verbatim
+                ⑦ POST al TargetUrl con headers + Polly                       │
                 ⑦ si falla:                                                   │
                    ├─ persistir DeliveryLog (status=Scheduled)                │
                    ├─ calcular NextRetryAt = now + paso[N]                    │
@@ -125,12 +128,13 @@ El Gateway funciona como **buffer y traductor entre productores y consumidores d
 1. **Recepción** ([IngestEndpoints.cs](src/Dotar.Gateway/Endpoints/IngestEndpoints.cs)). Endpoint minimal API. Lee el body como bytes para preservar la firma exacta.
 2. **Lookup tenant**. Resuelve el `slug` contra una caché en memoria con sliding expiration (default 5 minutos, configurable). Si el tenant está inactivo, responde `401` sin filtrarse información.
 3. **Validación HMAC** ([HmacSignatureValidator.cs](src/Dotar.Gateway/Infrastructure/Services/HmacSignatureValidator.cs)). Calcula `HMAC-SHA256(secret, body)` y compara contra el header esperado en formato timing-safe (`CryptographicOperations.FixedTimeEquals`) según el esquema del tenant.
-4. **Encolar**. Push a Redis con el payload, slug, target, sourceUrl. Devuelve `202 Accepted` al origen. **El origen ya no espera al destino final.**
-5. **Worker dispatcher** ([WebhookDispatcherWorker.cs](src/Dotar.Gateway/Workers/WebhookDispatcherWorker.cs)). Background service que hace `BLPOP` sobre Redis y procesa cada item.
-6. **Forward** ([ForwardingService.cs](src/Dotar.Gateway/Infrastructure/Services/ForwardingService.cs)). POST al `TargetUrl` con `HttpClient` + Polly (circuit breaker, timeout). Headers extra: `X-Gateway-Attempt`, `X-Gateway-DeliveryId` y la firma original.
-7. **Reintentos**. Si falla, persiste un `DeliveryLog` con `Status = Scheduled` y `NextRetryAt` calculado según la política aplicable. El `RetryScheduler` (loop cada 5s) busca logs vencidos y los re-encola.
-8. **Persistencia exitosa**. Cada intento queda registrado como `DeliveryAttempt` (HTTP code, duración ms, error, manual o automático).
-9. **Observabilidad**. El dashboard refleja en tiempo real cada cambio mediante `MonitorNotificationService` (eventos in-process).
+4. **Filtrado y captura de headers** ([HeaderForwardingPolicy.cs](src/Dotar.Gateway/Infrastructure/Services/HeaderForwardingPolicy.cs)). Se conservan los headers del provider (`X-WC-Webhook-Topic`, `X-Hub-Signature-256`, `X-Signature` de Mercado Pago, etc.) y se descartan los de transporte/proxy (`Host`, `Content-Length`, `X-Forwarded-*`, `Cf-*`, `X-Real-IP`). Detalle en [Propagación de headers](#-propagación-de-headers).
+5. **Encolar**. Push a Redis con el payload, slug, target, sourceUrl y los headers filtrados. Devuelve `202 Accepted` al origen. **El origen ya no espera al destino final.**
+6. **Worker dispatcher** ([WebhookDispatcherWorker.cs](src/Dotar.Gateway/Workers/WebhookDispatcherWorker.cs)). Background service que hace `BLPOP` sobre Redis y procesa cada item.
+7. **Forward** ([ForwardingService.cs](src/Dotar.Gateway/Infrastructure/Services/ForwardingService.cs)). POST al `TargetUrl` con `HttpClient` + Polly (circuit breaker, timeout). Aplica los headers del provider con `TryAddWithoutValidation` para preservar nombre y valor exactos. Suma `X-Dotar-Gateway-ID` con el slug del tenant.
+8. **Reintentos**. Si falla, persiste un `DeliveryLog` con `Status = Scheduled` y `NextRetryAt` calculado según la política aplicable. Los headers van también persistidos (`ForwardedHeadersJson`) para que retries y reenvíos manuales —que leen desde DB, no desde Redis— los propaguen igual.
+9. **Persistencia exitosa**. Cada intento queda registrado como `DeliveryAttempt` (HTTP code, duración ms, error, manual o automático).
+10. **Observabilidad**. El dashboard refleja en tiempo real cada cambio mediante `MonitorNotificationService` (eventos in-process).
 
 ### Esquemas HMAC soportados
 
@@ -160,6 +164,51 @@ const ghSig = 'sha256=' + hmac.copy().digest('hex');
 // Generic
 const genSig = hmac.copy().digest('hex');
 ```
+
+### 🔁 Propagación de headers
+
+El Gateway reenvía verbatim al downstream **todos los headers del provider** que arrancan con `X-`, preservando nombre y valor exactos. Sin esto, el receptor pierde contexto crítico (tipo de evento, firma HMAC, ID de delivery para deduplicar).
+
+**Política implementada en [HeaderForwardingPolicy.cs](src/Dotar.Gateway/Infrastructure/Services/HeaderForwardingPolicy.cs):**
+
+| Categoría                          | Acción                  | Ejemplos                                                                  |
+| ---------------------------------- | ----------------------- | ------------------------------------------------------------------------- |
+| Headers `X-*` del provider         | ✅ Reenviar verbatim     | `X-WC-Webhook-Topic`, `X-Hub-Signature-256`, `X-Signature`, `X-Request-Id` |
+| `User-Agent` original              | ✅ Reenviar como `X-Original-User-Agent` | `WooCommerce/8.5; Verifying`                          |
+| `X-Forwarded-*`, `X-Real-IP`       | ❌ No reenviar (proxy)   | `X-Forwarded-For`, `X-Forwarded-Host`                                     |
+| `Cf-*`, `Cdn-Loop`                 | ❌ No reenviar (CDN)     | `Cf-Ray`, `Cf-Connecting-IP`                                              |
+| Hop-by-hop / transporte            | ❌ No reenviar           | `Host`, `Connection`, `Content-Length`, `Transfer-Encoding`, `Keep-Alive` |
+| Pseudo-headers HTTP/2 (`:`)        | ❌ No reenviar           | `:authority`, `:method`                                                   |
+
+**Por qué importa cada header en el caso WooCommerce:**
+
+| Header                         | Para qué lo usa el downstream                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `X-WC-Webhook-Topic`           | Decidir acción: `order.created` → crear, `order.updated` → mergear, `order.deleted` → borrar |
+| `X-WC-Webhook-Event`           | Fallback / desambiguación cuando Topic no alcanza (`created`/`updated`/`deleted`/`restored`) |
+| `X-WC-Webhook-Resource`        | Tipo de recurso (`order`, `product`, `customer`, `coupon`)                                |
+| `X-WC-Webhook-Signature`       | Validar HMAC del body con el secret compartido (anti-spoofing)                            |
+| `X-WC-Webhook-Delivery-ID`     | Idempotencia: WooCommerce reintenta hasta 5 veces; sin este ID se procesa N veces lo mismo |
+| `X-WC-Webhook-Source`          | Trazabilidad: qué tienda originó el evento                                                |
+
+**Mismo criterio para otros providers:**
+
+| Provider     | Headers que se propagan automáticamente                                |
+| ------------ | ---------------------------------------------------------------------- |
+| Mercado Pago | `X-Signature`, `X-Request-Id`                                          |
+| VTEX / INNEW | `X-Webhook-Secret`, `X-Api-Key`                                        |
+| GitHub       | `X-Hub-Signature-256`, `X-GitHub-Event`, `X-GitHub-Delivery`           |
+| PedidosYa    | Cualquier `X-*` específico que envíe el provider                       |
+| Custom       | Cualquier `X-*` (incluyendo headers propios del cliente)               |
+
+**Garantías:**
+
+- **Capitalización exacta preservada** vía `HttpRequestMessage.Headers.TryAddWithoutValidation`. Algunos validadores estrictos rechazan `Http-X-Wc-Webhook-Topic` o `X_WC_Webhook_Topic`; el Gateway nunca renombra.
+- **Multi-valor** unificado por coma según RFC 7230 §3.2.2.
+- **Persistencia para retries**: los headers se guardan en `DeliveryLog.ForwardedHeadersJson`. Reintentos automáticos y manuales (que leen de DB, no de Redis) los reenvían igual.
+- **Defensa en profundidad**: `ForwardingService` re-aplica la policy aunque la cola venga con headers fabricados, así no se pueden inyectar `Host` o `X-Forwarded-*` desde el origen.
+
+**Test de aceptación**: [`IngestHeaderPropagationTests.cs`](tests/Dotar.Gateway.Tests/IngestHeaderPropagationTests.cs) ejercita un POST a `/ingest/{slug}` con los 6 headers WooCommerce + ruido de proxy/CDN, y verifica que cada header del provider llega al outgoing con mismo nombre y valor, y que los de proxy quedan afuera.
 
 ### Políticas de reintento
 
@@ -503,6 +552,11 @@ Endpoint público que reciben los sistemas origen.
 | `Generic`     | configurable o `X-Webhook-Signature` | hex lowercase     |
 
 **Body**: cualquier payload que el origen envíe (típicamente JSON, pero se trata como bytes opacos para el HMAC).
+
+**Headers que se propagan al downstream** (ver [Propagación de headers](#-propagación-de-headers)):
+- Todos los `X-*` del provider con nombre y valor exactos.
+- `User-Agent` original como `X-Original-User-Agent`.
+- `X-Dotar-Gateway-ID: <slug-del-tenant>` agregado por el Gateway.
 
 **Respuestas**:
 - `202 Accepted` — encolado para reenvío.
