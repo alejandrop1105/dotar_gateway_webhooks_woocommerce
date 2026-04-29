@@ -1,12 +1,14 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 
 namespace Dotar.Gateway.Infrastructure.Services;
 
 /// <summary>
 /// Servicio de reenvío HTTP que entrega los webhooks al destino final del tenant.
-/// Replica headers de forma transparente y añade identificación del Gateway.
+/// Reenvía verbatim los headers X-* del provider (filtrados por HeaderForwardingPolicy)
+/// para que el downstream conserve contexto: topic/event, firma HMAC, delivery-id, etc.
 /// </summary>
 public class ForwardingService
 {
@@ -22,28 +24,43 @@ public class ForwardingService
     }
 
     /// <summary>
-    /// Reenvía el payload JSON al destino final.
-    /// Retorna el código de estado, duración y mensaje de error si aplica.
+    /// Reenvía el payload JSON al destino final, propagando los headers del provider.
     /// </summary>
     public async Task<ForwardResult> ForwardAsync(
-        string targetUrl, string payload, string tenantSlug)
+        string targetUrl,
+        string payload,
+        string tenantSlug,
+        IReadOnlyDictionary<string, string>? forwardedHeaders = null)
     {
         var sw = Stopwatch.StartNew();
 
         try
         {
             var client = _clientFactory.CreateClient("GatewayForwarder");
-            var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-            // Header personalizado para identificar que el dato viene del Gateway
-            content.Headers.Add("X-Dotar-Gateway-ID", tenantSlug);
+            // Construimos manualmente HttpRequestMessage para poder llamar TryAddWithoutValidation
+            // y preservar el nombre exacto de cada header (algunos providers son sensibles a la
+            // capitalización: X-WC-Webhook-Topic ≠ X-Wc-Webhook-Topic en validadores estrictos).
+            using var request = new HttpRequestMessage(HttpMethod.Post, targetUrl)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            };
 
-            var response = await client.PostAsync(targetUrl, content);
+            // Headers propios del Gateway (NO deben pisar headers del provider que también
+            // arranquen con X-Dotar-* — la prioridad la tiene el provider).
+            request.Headers.TryAddWithoutValidation("X-Dotar-Gateway-ID", tenantSlug);
+
+            // Aplicar headers del provider (X-* + X-Original-User-Agent) verbatim.
+            if (forwardedHeaders is { Count: > 0 })
+                ApplyForwardedHeaders(request, forwardedHeaders);
+
+            var response = await client.SendAsync(request);
             sw.Stop();
 
             _logger.LogInformation(
-                "Webhook reenviado a {Url} → {StatusCode} en {Duration}ms",
-                targetUrl, (int)response.StatusCode, sw.ElapsedMilliseconds);
+                "Webhook reenviado a {Url} → {StatusCode} en {Duration}ms ({HeaderCount} headers propagados)",
+                targetUrl, (int)response.StatusCode, sw.ElapsedMilliseconds,
+                forwardedHeaders?.Count ?? 0);
 
             return new ForwardResult
             {
@@ -78,6 +95,28 @@ public class ForwardingService
                 ErrorMessage = ex.Message,
                 IsSuccess = false
             };
+        }
+    }
+
+    /// <summary>
+    /// Aplica los headers al request saliente. La mayoría son request-headers; algunos pocos
+    /// son entity-headers (van en Content). Probamos ambos para máxima compatibilidad.
+    /// </summary>
+    private static void ApplyForwardedHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string> headers)
+    {
+        foreach (var (name, value) in headers)
+        {
+            // Defensa en profundidad: el Ingest ya filtró, pero por si llegan headers fabricados
+            // desde la cola por algún reproceso o test, re-aplicamos la política aquí.
+            if (!HeaderForwardingPolicy.ShouldForward(name)
+                && !string.Equals(name, HeaderForwardingPolicy.OriginalUserAgentHeader, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // TryAddWithoutValidation preserva la capitalización original del nombre.
+            if (request.Headers.TryAddWithoutValidation(name, value)) continue;
+
+            // Si HttpClient lo rechaza como request-header (caso raro), probamos como content-header.
+            request.Content?.Headers.TryAddWithoutValidation(name, value);
         }
     }
 }

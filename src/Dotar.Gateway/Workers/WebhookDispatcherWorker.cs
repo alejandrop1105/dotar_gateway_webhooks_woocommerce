@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Dotar.Gateway.Domain.Entities;
 using Dotar.Gateway.Domain.Models;
 using Dotar.Gateway.Infrastructure.Data;
@@ -183,7 +184,8 @@ public class WebhookDispatcherWorker : BackgroundService
             "Reintento programado #{LogId} paso {Step} para '{Tenant}' → {Url}",
             log.Id, log.CurrentStep + 1, tenant.Name, targetUrl);
 
-        var result = await _forwarder.ForwardAsync(targetUrl, payload, tenant.Slug);
+        var headers = DeserializeHeaders(log.ForwardedHeadersJson);
+        var result = await _forwarder.ForwardAsync(targetUrl, payload, tenant.Slug, headers);
 
         // Registrar intento en historial
         log.AttemptNumber++;
@@ -261,7 +263,8 @@ public class WebhookDispatcherWorker : BackgroundService
         var payload = log.Payload ?? string.Empty;
 
         _logger.LogInformation("Reenvío manual #{LogId} → {Url}", deliveryLogId, targetUrl);
-        var result = await _forwarder.ForwardAsync(targetUrl, payload, log.Tenant.Slug);
+        var headers = DeserializeHeaders(log.ForwardedHeadersJson);
+        var result = await _forwarder.ForwardAsync(targetUrl, payload, log.Tenant.Slug, headers);
 
         // Registrar intento manual en historial
         log.AttemptNumber++;
@@ -298,7 +301,11 @@ public class WebhookDispatcherWorker : BackgroundService
         var policyId = await GetPolicyIdForTenantAsync(tenantId);
         var pipeline = _cbCache.GetOrAdd(policyId, _ => BuildCircuitBreaker(policyId));
         return await pipeline.ExecuteAsync(async _ =>
-            await _forwarder.ForwardAsync(webhook.TargetUrl, webhook.Payload, webhook.TenantSlug), ct);
+            await _forwarder.ForwardAsync(
+                webhook.TargetUrl,
+                webhook.Payload,
+                webhook.TenantSlug,
+                webhook.ForwardedHeaders), ct);
     }
 
     private ResiliencePipeline<ForwardResult> BuildCircuitBreaker(int policyId)
@@ -326,6 +333,29 @@ public class WebhookDispatcherWorker : BackgroundService
 
     public void InvalidatePipelineCache(int policyId) => _cbCache.TryRemove(policyId, out _);
     public void InvalidateAllPipelineCache() => _cbCache.Clear();
+
+    // ═══════════════════════════════════════════════════════
+    // Serialización de headers reenviados
+    // ═══════════════════════════════════════════════════════
+
+    private static string? SerializeHeaders(IReadOnlyDictionary<string, string>? headers)
+    {
+        if (headers is null || headers.Count == 0) return null;
+        return JsonSerializer.Serialize(headers);
+    }
+
+    private static IReadOnlyDictionary<string, string>? DeserializeHeaders(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     // ═══════════════════════════════════════════════════════
     // Guardar log de primera entrega
@@ -366,6 +396,7 @@ public class WebhookDispatcherWorker : BackgroundService
                     : webhook.Payload,
                 SourceUrl = webhook.SourceUrl,
                 TargetUrl = webhook.TargetUrl,
+                ForwardedHeadersJson = SerializeHeaders(webhook.ForwardedHeaders),
                 HttpStatusCode = result.StatusCode,
                 AttemptNumber = attemptNumber,
                 DurationMs = result.DurationMs,

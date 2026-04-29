@@ -1,6 +1,7 @@
 using Dotar.Gateway.Domain.Entities;
 using Dotar.Gateway.Domain.Models;
 using Dotar.Gateway.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
 
 namespace Dotar.Gateway.Endpoints;
 
@@ -71,7 +72,18 @@ public static class IngestEndpoints
             }
         }
 
-        // 4. Encolar en Redis
+        // 4. Capturar headers del provider para reenviar verbatim al downstream.
+        //    Por qué: WooCommerce/MercadoPago/VTEX/etc. envían X-* específicos (Topic, Event,
+        //    Signature, Delivery-ID, ...) que el downstream necesita para decidir acción,
+        //    validar HMAC y deduplicar reintentos. Sin esto, el receptor pierde contexto crítico.
+        var userAgent = request.Headers["User-Agent"].ToString();
+        var forwardedHeaders = HeaderForwardingPolicy.SelectForwardable(
+            request.Headers.Select(h => new KeyValuePair<string, string[]>(
+                h.Key,
+                h.Value.Where(v => v is not null).Select(v => v!).ToArray())),
+            originalUserAgent: userAgent);
+
+        // 5. Encolar en Redis
         var payload = System.Text.Encoding.UTF8.GetString(body);
         var sourceUrl = request.Headers["X-WC-Webhook-Source"].FirstOrDefault();
         await queue.EnqueueAsync(new QueuedWebhook
@@ -81,7 +93,8 @@ public static class IngestEndpoints
             TargetUrl = tenant.TargetUrl,
             SourceUrl = sourceUrl,
             Payload = payload,
-            ReceivedAt = DateTime.UtcNow
+            ReceivedAt = DateTime.UtcNow,
+            ForwardedHeaders = forwardedHeaders
         });
 
         logger.LogInformation("Webhook aceptado para tenant '{Slug}' → encolado", slug);

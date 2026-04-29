@@ -36,6 +36,13 @@ public class DeliveryLog
     public string? SourceUrl { get; set; }
 
     public string? TargetUrl { get; set; }
+
+    /// <summary>
+    /// JSON con los headers del webhook entrante reenviados al destino.
+    /// Persistido para que los retries (que leen desde DB, no desde Redis) los reenvíen también.
+    /// </summary>
+    public string? ForwardedHeadersJson { get; set; }
+
     public int? HttpStatusCode { get; set; }
     public int AttemptNumber { get; set; } = 1;
     public long DurationMs { get; set; }

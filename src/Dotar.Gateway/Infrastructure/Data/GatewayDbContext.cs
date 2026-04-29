@@ -102,6 +102,7 @@ public class GatewayDbContext : DbContext
             e.HasIndex(d => d.NextRetryAt);
             e.Property(d => d.Payload).HasColumnType("TEXT");
             e.Property(d => d.TargetUrl).HasMaxLength(2000);
+            e.Property(d => d.ForwardedHeadersJson).HasColumnType("TEXT");
             e.Property(d => d.Status).HasConversion<string>().HasMaxLength(20);
             e.HasOne(d => d.Tenant)
                 .WithMany(t => t.DeliveryLogs)

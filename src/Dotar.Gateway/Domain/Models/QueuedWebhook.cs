@@ -11,4 +11,10 @@ public class QueuedWebhook
     public string? SourceUrl { get; set; }
     public string Payload { get; set; } = string.Empty;
     public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Headers del webhook entrante que deben reenviarse verbatim al downstream
+    /// (ya filtrados por HeaderForwardingPolicy). Clave = nombre exacto del header.
+    /// </summary>
+    public Dictionary<string, string> ForwardedHeaders { get; set; } = new();
 }

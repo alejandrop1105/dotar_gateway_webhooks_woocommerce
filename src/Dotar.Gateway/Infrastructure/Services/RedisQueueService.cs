@@ -9,12 +9,12 @@ namespace Dotar.Gateway.Infrastructure.Services;
 /// </summary>
 public class RedisQueueService
 {
-    private readonly IConnectionMultiplexer _redis;
+    private readonly IConnectionMultiplexer? _redis;
     private readonly string _queueKey;
     private readonly ILogger<RedisQueueService> _logger;
 
     public RedisQueueService(
-        IConnectionMultiplexer redis,
+        IConnectionMultiplexer? redis,
         IConfiguration configuration,
         ILogger<RedisQueueService> logger)
     {
@@ -23,37 +23,34 @@ public class RedisQueueService
         _logger = logger;
     }
 
+    private IDatabase GetDb() =>
+        (_redis ?? throw new InvalidOperationException("Redis no está configurado.")).GetDatabase();
+
     /// <summary>
     /// Encola un webhook para procesamiento asíncrono.
     /// </summary>
-    public async Task EnqueueAsync(QueuedWebhook webhook)
+    public virtual async Task EnqueueAsync(QueuedWebhook webhook)
     {
-        var db = _redis.GetDatabase();
         var json = JsonSerializer.Serialize(webhook);
-        await db.ListRightPushAsync(_queueKey, json);
+        await GetDb().ListRightPushAsync(_queueKey, json);
         _logger.LogDebug("Webhook encolado para tenant {Slug}", webhook.TenantSlug);
     }
 
     /// <summary>
     /// Desencola el siguiente webhook (blocking pop con timeout).
     /// </summary>
-    public async Task<QueuedWebhook?> DequeueAsync(int timeoutSeconds = 5)
+    public virtual async Task<QueuedWebhook?> DequeueAsync(int timeoutSeconds = 5)
     {
-        var db = _redis.GetDatabase();
-        var result = await db.ListLeftPopAsync(_queueKey);
-
-        if (result.IsNullOrEmpty)
-            return null;
-
+        var result = await GetDb().ListLeftPopAsync(_queueKey);
+        if (result.IsNullOrEmpty) return null;
         return JsonSerializer.Deserialize<QueuedWebhook>(result!);
     }
 
     /// <summary>
     /// Retorna la cantidad de mensajes pendientes en la cola.
     /// </summary>
-    public async Task<long> GetPendingCountAsync()
+    public virtual async Task<long> GetPendingCountAsync()
     {
-        var db = _redis.GetDatabase();
-        return await db.ListLengthAsync(_queueKey);
+        return await GetDb().ListLengthAsync(_queueKey);
     }
 }
