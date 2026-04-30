@@ -240,6 +240,43 @@ public class TenantApiEndpointsTests : IClassFixture<GatewayWebApplicationFactor
     }
 
     [Fact]
+    public async Task Delete_RemovesTenant_AndInvalidatesCache()
+    {
+        var client = AuthedClient();
+        var slug = $"del-test-{Guid.NewGuid():N}".Substring(0, 25);
+        await client.PostAsJsonAsync("/api/tenants", new
+        {
+            name = "Del Test", slug, targetUrl = "https://x.com/h"
+        });
+
+        var resp = await client.DeleteAsync($"/api/tenants/{slug}");
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        Assert.False(await db.Tenants.AnyAsync(t => t.Slug == slug));
+
+        var get = await client.GetAsync($"/api/tenants/{slug}");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_NonExistent_Returns404()
+    {
+        var client = AuthedClient();
+        var resp = await client.DeleteAsync("/api/tenants/nope-nope-delete");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_WithoutApiKey_Returns401()
+    {
+        var client = _factory.CreateClient();
+        var resp = await client.DeleteAsync("/api/tenants/anything");
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+    }
+
+    [Fact]
     public async Task PutTargetUrl_NonExistent_Returns404()
     {
         var client = AuthedClient();

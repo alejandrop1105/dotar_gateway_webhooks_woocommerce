@@ -8,6 +8,8 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject TenantCacheService CacheService
 @inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 @implements IDisposable
 
 <MudText Typo="Typo.h4" Class="mb-4">
@@ -120,6 +122,9 @@ else
                                            Size="Size.Small"
                                            Color="@(t.IsActive ? Color.Error : Color.Success)"
                                            OnClick="() => ToggleActive(t)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="() => DeleteTenant(t)" />
                         </td>
                     </tr>
                 }
@@ -278,6 +283,37 @@ else
         }
         await db.SaveChangesAsync();
         Navigation.NavigateTo("/tenants");
+    }
+
+    private async Task DeleteTenant(Tenant tenant)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var deliveryCount = await db.DeliveryLogs.CountAsync(d => d.TenantId == tenant.Id);
+
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"¿Eliminar el tenant '{tenant.Name}' ({tenant.Slug})? " +
+                              (deliveryCount > 0
+                                  ? $"Se borrarán también {deliveryCount} registros de entrega históricos. Esta acción es irreversible."
+                                  : "Esta acción es irreversible."),
+            ["ButtonText"] = "Eliminar",
+            ["Color"] = Color.Error
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar eliminación", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        var slug = tenant.Slug;
+        var entity = await db.Tenants.FindAsync(tenant.Id);
+        if (entity is not null)
+        {
+            db.Tenants.Remove(entity);
+            await db.SaveChangesAsync();
+            CacheService.Invalidate(slug);
+            Snackbar.Add($"Tenant '{slug}' eliminado.", Severity.Success);
+        }
+        await LoadTenants();
     }
 
     private async Task ToggleActive(Tenant tenant)

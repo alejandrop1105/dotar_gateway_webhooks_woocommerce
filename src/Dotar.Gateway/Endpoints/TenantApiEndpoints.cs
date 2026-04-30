@@ -43,6 +43,13 @@ public static class TenantApiEndpoints
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/{slug}", DeleteTenant)
+            .WithName("DeleteTenant")
+            .WithSummary("Elimina un tenant y su histórico de entregas (cascada)")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     /// <summary>POST /api/tenants — crea un tenant nuevo. Devuelve el secret generado si no se proveyó.</summary>
@@ -190,6 +197,33 @@ public static class TenantApiEndpoints
             createdAt = tenant.CreatedAt,
             updatedAt = tenant.UpdatedAt
         });
+    }
+
+    /// <summary>
+    /// DELETE /api/tenants/{slug} — borrado físico. Cascadea DeliveryLogs y DeliveryAttempts
+    /// (configurado en GatewayDbContext con DeleteBehavior.Cascade).
+    /// </summary>
+    private static async Task<IResult> DeleteTenant(
+        string slug,
+        IServiceScopeFactory scopeFactory,
+        TenantCacheService tenantCache,
+        ILogger<Program> logger)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        var normalized = slug.ToLowerInvariant();
+        var tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Slug == normalized);
+        if (tenant is null)
+            return Results.NotFound(new { error = $"Tenant con slug '{slug}' no encontrado." });
+
+        db.Tenants.Remove(tenant);
+        await db.SaveChangesAsync();
+
+        tenantCache.Invalidate(normalized);
+
+        logger.LogInformation("Tenant '{Slug}' eliminado vía API.", normalized);
+        return Results.NoContent();
     }
 
     private static string GenerateSecret()
