@@ -138,6 +138,44 @@ public class TenantApiEndpointsTests : IClassFixture<GatewayWebApplicationFactor
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
+    [Theory]
+    [InlineData("WooCommerce")]
+    [InlineData("GitHub")]
+    [InlineData("Generic")]
+    [InlineData("None")]
+    public async Task Post_AcceptsSignatureSchemeAsString(string scheme)
+    {
+        var client = AuthedClient();
+        var slug = $"sig-str-{Guid.NewGuid():N}".Substring(0, 25);
+        var resp = await client.PostAsJsonAsync("/api/tenants", new
+        {
+            name = "X",
+            slug,
+            targetUrl = "https://x.com/h",
+            signatureScheme = scheme
+        });
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+        var body = await resp.Content.ReadFromJsonAsync<CreatedResponse>();
+        Assert.Equal(scheme, body!.SignatureScheme);
+    }
+
+    [Fact]
+    public async Task Post_AcceptsSignatureSchemeAsInteger()
+    {
+        var client = AuthedClient();
+        var slug = $"sig-int-{Guid.NewGuid():N}".Substring(0, 25);
+        var resp = await client.PostAsJsonAsync("/api/tenants", new
+        {
+            name = "X",
+            slug,
+            targetUrl = "https://x.com/h",
+            signatureScheme = 1   // GitHub
+        });
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+        var body = await resp.Content.ReadFromJsonAsync<CreatedResponse>();
+        Assert.Equal("GitHub", body!.SignatureScheme);
+    }
+
     [Fact]
     public async Task Post_AcceptsCustomSecret()
     {

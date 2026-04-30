@@ -33,6 +33,13 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     return ConnectionMultiplexer.Connect(options);
 });
 
+// ─── JSON: aceptar y emitir enums como string en /api/* (ej. "WooCommerce") ─
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter(allowIntegerValues: true));
+});
+
 // ─── Servicios de Infraestructura ─────────────────────
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<HmacSignatureValidator>();
