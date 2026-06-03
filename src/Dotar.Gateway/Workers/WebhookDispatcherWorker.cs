@@ -21,6 +21,7 @@ public class WebhookDispatcherWorker : BackgroundService
     private readonly ForwardingService _forwarder;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly MonitorNotificationService _monitor;
+    private readonly SystemLogService _systemLog;
     private readonly ILogger<WebhookDispatcherWorker> _logger;
     private readonly ConcurrentDictionary<int, ResiliencePipeline<ForwardResult>> _cbCache = new();
 
@@ -29,12 +30,14 @@ public class WebhookDispatcherWorker : BackgroundService
         ForwardingService forwarder,
         IServiceScopeFactory scopeFactory,
         MonitorNotificationService monitor,
+        SystemLogService systemLog,
         ILogger<WebhookDispatcherWorker> logger)
     {
         _queue = queue;
         _forwarder = forwarder;
         _scopeFactory = scopeFactory;
         _monitor = monitor;
+        _systemLog = systemLog;
         _logger = logger;
     }
 
@@ -90,8 +93,40 @@ public class WebhookDispatcherWorker : BackgroundService
         _logger.LogInformation("Procesando webhook para '{Slug}' → {Url}",
             webhook.TenantSlug, webhook.TargetUrl);
 
-        var eventId = Guid.NewGuid();
+        var eventId = webhook.EventId == Guid.Empty ? Guid.NewGuid() : webhook.EventId;
+
+        _systemLog.Info(SystemLogCategory.Worker,
+            $"Despachando webhook para '{webhook.TenantSlug}' → {webhook.TargetUrl}",
+            tenantSlug: webhook.TenantSlug,
+            eventId: eventId,
+            url: webhook.TargetUrl,
+            details: $"headers={webhook.ForwardedHeaders.Count}; payloadBytes={webhook.Payload?.Length ?? 0}");
+
         var result = await ForwardWithCircuitBreakerAsync(webhook.TenantId, webhook, ct);
+
+        if (result.IsSuccess)
+        {
+            _systemLog.Info(SystemLogCategory.Forward,
+                $"Reenvío exitoso a {webhook.TargetUrl} → HTTP {result.StatusCode} en {result.DurationMs}ms",
+                tenantSlug: webhook.TenantSlug,
+                eventId: eventId,
+                statusCode: result.StatusCode,
+                durationMs: result.DurationMs,
+                url: webhook.TargetUrl);
+        }
+        else
+        {
+            _systemLog.Error(SystemLogCategory.Forward,
+                $"Reenvío falló: {result.ErrorMessage}",
+                tenantSlug: webhook.TenantSlug,
+                eventId: eventId,
+                statusCode: result.StatusCode,
+                durationMs: result.DurationMs,
+                url: webhook.TargetUrl,
+                responseBody: result.ResponseBody,
+                details: $"headersForwarded={webhook.ForwardedHeaders.Count}",
+                ex: result.Exception);
+        }
 
         await SaveDeliveryLogAsync(webhook, result, eventId, attemptNumber: 1, currentStep: 0,
             result.IsSuccess ? DeliveryStatus.Success : DeliveryStatus.Scheduled);
@@ -207,6 +242,15 @@ public class WebhookDispatcherWorker : BackgroundService
             log.DurationMs = result.DurationMs;
             log.NextRetryAt = null;
             log.ErrorMessage = null;
+
+            _systemLog.Info(SystemLogCategory.Retry,
+                $"Reintento #{log.Id} exitoso → HTTP {result.StatusCode} en {result.DurationMs}ms",
+                tenantSlug: tenant.Slug,
+                eventId: log.WebhookEventId,
+                deliveryLogId: log.Id,
+                statusCode: result.StatusCode,
+                durationMs: result.DurationMs,
+                url: targetUrl);
         }
         else
         {
@@ -226,6 +270,17 @@ public class WebhookDispatcherWorker : BackgroundService
                 _logger.LogWarning(
                     "Reintento #{LogId} falló (paso {Step}/{Max}). Próximo en {Delay}",
                     log.Id, nextStep + 1, steps.Count, delay);
+
+                _systemLog.Warn(SystemLogCategory.Retry,
+                    $"Reintento #{log.Id} falló (paso {nextStep + 1}/{steps.Count}). Próximo en {delay}",
+                    tenantSlug: tenant.Slug,
+                    eventId: log.WebhookEventId,
+                    deliveryLogId: log.Id,
+                    statusCode: result.StatusCode,
+                    durationMs: result.DurationMs,
+                    url: targetUrl,
+                    responseBody: result.ResponseBody,
+                    details: $"error={result.ErrorMessage}; nextRetryAt={log.NextRetryAt:O}");
             }
             else
             {
@@ -238,6 +293,18 @@ public class WebhookDispatcherWorker : BackgroundService
                 _logger.LogError(
                     "Webhook #{LogId} FALLÓ definitivamente tras {Attempts} intentos para '{Tenant}'",
                     log.Id, log.AttemptNumber, tenant.Name);
+
+                _systemLog.Error(SystemLogCategory.Retry,
+                    $"Webhook #{log.Id} FALLÓ definitivamente tras {log.AttemptNumber} intentos",
+                    tenantSlug: tenant.Slug,
+                    eventId: log.WebhookEventId,
+                    deliveryLogId: log.Id,
+                    statusCode: result.StatusCode,
+                    durationMs: result.DurationMs,
+                    url: targetUrl,
+                    responseBody: result.ResponseBody,
+                    details: $"error={result.ErrorMessage}; attempts={log.AttemptNumber}",
+                    ex: result.Exception);
             }
         }
 
@@ -263,8 +330,40 @@ public class WebhookDispatcherWorker : BackgroundService
         var payload = log.Payload ?? string.Empty;
 
         _logger.LogInformation("Reenvío manual #{LogId} → {Url}", deliveryLogId, targetUrl);
+        _systemLog.Info(SystemLogCategory.ManualRetry,
+            $"Reenvío manual #{deliveryLogId} → {targetUrl}",
+            tenantSlug: log.Tenant.Slug,
+            eventId: log.WebhookEventId,
+            deliveryLogId: log.Id,
+            url: targetUrl);
+
         var headers = DeserializeHeaders(log.ForwardedHeadersJson);
         var result = await _forwarder.ForwardAsync(targetUrl, payload, log.Tenant.Slug, headers);
+
+        if (result.IsSuccess)
+        {
+            _systemLog.Info(SystemLogCategory.ManualRetry,
+                $"Reenvío manual #{deliveryLogId} exitoso → HTTP {result.StatusCode} en {result.DurationMs}ms",
+                tenantSlug: log.Tenant.Slug,
+                eventId: log.WebhookEventId,
+                deliveryLogId: log.Id,
+                statusCode: result.StatusCode,
+                durationMs: result.DurationMs,
+                url: targetUrl);
+        }
+        else
+        {
+            _systemLog.Error(SystemLogCategory.ManualRetry,
+                $"Reenvío manual #{deliveryLogId} falló: {result.ErrorMessage}",
+                tenantSlug: log.Tenant.Slug,
+                eventId: log.WebhookEventId,
+                deliveryLogId: log.Id,
+                statusCode: result.StatusCode,
+                durationMs: result.DurationMs,
+                url: targetUrl,
+                responseBody: result.ResponseBody,
+                ex: result.Exception);
+        }
 
         // Registrar intento manual en historial
         log.AttemptNumber++;

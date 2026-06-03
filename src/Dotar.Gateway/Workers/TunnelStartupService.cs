@@ -1,3 +1,4 @@
+using Dotar.Gateway.Domain.Entities;
 using Dotar.Gateway.Infrastructure.Data;
 using Dotar.Gateway.Infrastructure.Services;
 using Dotar.Gateway.Infrastructure.Tunnel;
@@ -13,15 +14,18 @@ public class TunnelStartupService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TunnelStatusService _tunnelStatus;
+    private readonly SystemLogService _systemLog;
     private readonly ILogger<TunnelStartupService> _logger;
 
     public TunnelStartupService(
         IServiceScopeFactory scopeFactory,
         TunnelStatusService tunnelStatus,
+        SystemLogService systemLog,
         ILogger<TunnelStartupService> logger)
     {
         _scopeFactory = scopeFactory;
         _tunnelStatus = tunnelStatus;
+        _systemLog = systemLog;
         _logger = logger;
     }
 
@@ -48,6 +52,7 @@ public class TunnelStartupService : BackgroundService
             {
                 _logger.LogInformation("No hay credenciales Cloudflare configuradas. Túnel no iniciado.");
                 _tunnelStatus.UpdateStatus("⚠️ Sin configurar — ir a Configuración");
+                _systemLog.Info(SystemLogCategory.Tunnel, "Cloudflare Tunnel: sin credenciales configuradas — saltando arranque");
                 return;
             }
 
@@ -73,11 +78,13 @@ public class TunnelStartupService : BackgroundService
             var tunnelUrl = $"https://{tunnelName}.{domain}";
             _tunnelStatus.UpdateStatus("Conectado", tunnelUrl, isConnected: true);
             _logger.LogInformation("✅ Túnel Cloudflare activo: {TunnelUrl}", tunnelUrl);
+            _systemLog.Info(SystemLogCategory.Tunnel, $"Túnel Cloudflare activo: {tunnelUrl}", url: tunnelUrl);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al iniciar túnel Cloudflare automáticamente");
             _tunnelStatus.UpdateStatus($"❌ Error: {ex.Message}");
+            _systemLog.Error(SystemLogCategory.Tunnel, $"Error al iniciar túnel Cloudflare: {ex.Message}", ex: ex);
         }
     }
 

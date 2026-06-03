@@ -47,8 +47,16 @@ public class CloudflareTunnelManager : IDisposable
         _localPort = localPort;
         _config = config;
         _logger = logger;
-        _exePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ExeName);
-        _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tunnel_config.json");
+        
+        var targetDir = AppDomain.CurrentDomain.BaseDirectory;
+        var dataDir = Path.Combine(targetDir, "data");
+        if (Directory.Exists(dataDir))
+        {
+            targetDir = dataDir;
+        }
+
+        _exePath = Path.Combine(targetDir, ExeName);
+        _configPath = Path.Combine(targetDir, "tunnel_config.json");
 
         _watchdogTimer = new System.Timers.Timer(5000);
         _watchdogTimer.Elapsed += WatchdogTimer_Elapsed;

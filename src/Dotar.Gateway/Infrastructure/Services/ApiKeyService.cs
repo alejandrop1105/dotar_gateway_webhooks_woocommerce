@@ -109,6 +109,8 @@ public class ApiKeyService
     {
         Span<byte> bytes = stackalloc byte[32];
         RandomNumberGenerator.Fill(bytes);
-        return Convert.ToHexString(bytes).ToLowerInvariant();
+        // Formato base64: consistente con el resto de secrets del sistema y con
+        // la signature WooCommerce (que también es base64).
+        return Convert.ToBase64String(bytes);
     }
 }

@@ -12,6 +12,8 @@ namespace Dotar.Gateway.Infrastructure.Services;
 /// </summary>
 public class ForwardingService
 {
+    private const int MaxResponseBodyCapture = 4000;
+
     private readonly IHttpClientFactory _clientFactory;
     private readonly ILogger<ForwardingService> _logger;
 
@@ -54,7 +56,26 @@ public class ForwardingService
             if (forwardedHeaders is { Count: > 0 })
                 ApplyForwardedHeaders(request, forwardedHeaders);
 
-            var response = await client.SendAsync(request);
+            using var response = await client.SendAsync(request);
+
+            string? responseBody = null;
+            if (!response.IsSuccessStatusCode)
+            {
+                // Capturar response body en fallos (truncado) — clave para diagnosticar
+                // 404, 400, 5xx del downstream.
+                try
+                {
+                    var raw = await response.Content.ReadAsStringAsync();
+                    responseBody = raw.Length > MaxResponseBodyCapture
+                        ? raw[..MaxResponseBodyCapture] + "…[trunc]"
+                        : raw;
+                }
+                catch (Exception readEx)
+                {
+                    responseBody = $"[error leyendo body: {readEx.Message}]";
+                }
+            }
+
             sw.Stop();
 
             _logger.LogInformation(
@@ -69,7 +90,9 @@ public class ForwardingService
                 IsSuccess = response.IsSuccessStatusCode,
                 ErrorMessage = response.IsSuccessStatusCode
                     ? null
-                    : $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}"
+                    : $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}",
+                ResponseBody = responseBody,
+                ReasonPhrase = response.ReasonPhrase
             };
         }
         catch (TaskCanceledException)
@@ -93,7 +116,8 @@ public class ForwardingService
                 StatusCode = 0,
                 DurationMs = sw.ElapsedMilliseconds,
                 ErrorMessage = ex.Message,
-                IsSuccess = false
+                IsSuccess = false,
+                Exception = ex
             };
         }
     }
@@ -127,4 +151,7 @@ public class ForwardResult
     public long DurationMs { get; set; }
     public string? ErrorMessage { get; set; }
     public bool IsSuccess { get; set; }
+    public string? ResponseBody { get; set; }
+    public string? ReasonPhrase { get; set; }
+    public Exception? Exception { get; set; }
 }

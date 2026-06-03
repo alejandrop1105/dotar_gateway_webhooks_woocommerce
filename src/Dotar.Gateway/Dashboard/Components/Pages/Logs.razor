@@ -1,0 +1,342 @@
+@page "/logs"
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Article" Class="mr-2" /> Logs del Sistema
+</MudText>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Registro detallado de operaciones del Gateway. Útil para diagnosticar por qué un evento
+    no llega al destino: incluye HTTP status, cuerpo de respuesta del downstream, headers y errores.
+</MudText>
+
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h4" Color="Color.Default">@_totalCount</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase;">Total registrados</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h4" Color="Color.Info">@_infoCount</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase;">Info</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h4" Color="Color.Warning">@_warningCount</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase;">Warnings</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h4" Color="Color.Error">@_errorCount</MudText>
+            <MudText Typo="Typo.caption" Style="text-transform: uppercase;">Errors</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudSelect T="string" @bind-Value="_filterLevel" Label="Nivel" Variant="Variant.Outlined"
+               Dense="true" Style="max-width:160px;">
+        <MudSelectItem T="string" Value="@("")">Todos</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Information")">Información</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Warning")">Warning</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Error")">Error</MudSelectItem>
+    </MudSelect>
+
+    <MudSelect T="string" @bind-Value="_filterCategory" Label="Categoría" Variant="Variant.Outlined"
+               Dense="true" Style="max-width:180px;">
+        <MudSelectItem T="string" Value="@("")">Todas</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Ingest")">Ingesta</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Forward")">Reenvío</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Retry")">Reintento</MudSelectItem>
+        <MudSelectItem T="string" Value="@("ManualRetry")">Manual</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Auth")">Auth/HMAC</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Worker")">Worker</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Tunnel")">Túnel</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Api")">API</MudSelectItem>
+        <MudSelectItem T="string" Value="@("System")">Sistema</MudSelectItem>
+    </MudSelect>
+
+    <MudSelect T="string" @bind-Value="_filterTenant" Label="Tenant" Variant="Variant.Outlined"
+               Dense="true" Style="max-width:200px;">
+        <MudSelectItem T="string" Value="@("")">Todos</MudSelectItem>
+        @foreach (var slug in _tenantSlugs)
+        {
+            <MudSelectItem T="string" Value="@slug">@slug</MudSelectItem>
+        }
+    </MudSelect>
+
+    <MudTextField @bind-Value="_filterText" Label="Buscar" Variant="Variant.Outlined"
+                  Dense="true" Style="max-width:280px;"
+                  Placeholder="texto en mensaje, URL o body…"
+                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" />
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadLogs">
+        Aplicar / Actualizar
+    </MudButton>
+
+    <MudSwitch T="bool" @bind-Value="_autoRefresh" Label="Auto-refresh" Color="Color.Success" />
+
+    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+               StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="ConfirmDeleteAll">
+        Limpiar todo
+    </MudButton>
+</MudStack>
+
+@if (_logs.Count > 0)
+{
+    <MudPaper Elevation="2">
+        <MudSimpleTable Hover="true" Dense="true">
+            <thead>
+                <tr>
+                    <th style="width:32px;"></th>
+                    <th style="width:160px;">Fecha</th>
+                    <th style="width:90px;">Nivel</th>
+                    <th style="width:110px;">Categoría</th>
+                    <th style="width:130px;">Tenant</th>
+                    <th style="width:70px;">HTTP</th>
+                    <th style="width:80px;">ms</th>
+                    <th>Mensaje</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in _logs)
+                {
+                    var isExpanded = _expandedIds.Contains(log.Id);
+                    <tr style="cursor:pointer;" @onclick="() => ToggleExpand(log.Id)">
+                        <td>
+                            <MudIcon Icon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                     Size="Size.Small" />
+                        </td>
+                        <td style="font-family:monospace; font-size:0.78rem;">
+                            @log.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")
+                        </td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Color="@GetLevelColor(log.Level)">
+                                @log.Level
+                            </MudChip>
+                        </td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                @log.Category
+                            </MudChip>
+                        </td>
+                        <td style="font-family:monospace; font-size:0.78rem;">
+                            @(log.TenantSlug ?? "—")
+                        </td>
+                        <td>
+                            @if (log.HttpStatusCode.HasValue)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="@GetHttpColor(log.HttpStatusCode)">
+                                    @log.HttpStatusCode
+                                </MudChip>
+                            }
+                        </td>
+                        <td style="font-family:monospace; font-size:0.78rem;">
+                            @(log.DurationMs?.ToString() ?? "—")
+                        </td>
+                        <td style="max-width:600px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            @log.Message
+                        </td>
+                    </tr>
+                    @if (isExpanded)
+                    {
+                        <tr>
+                            <td colspan="8" style="background: rgba(255,255,255,0.02); padding: 12px 24px;">
+                                <MudStack Spacing="2">
+                                    @if (!string.IsNullOrEmpty(log.Url))
+                                    {
+                                        <div>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">URL</MudText>
+                                            <MudText Typo="Typo.body2" Style="font-family:monospace; word-break:break-all;">
+                                                @log.Url
+                                            </MudText>
+                                        </div>
+                                    }
+                                    @if (log.WebhookEventId.HasValue)
+                                    {
+                                        <div>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Webhook Event ID</MudText>
+                                            <MudText Typo="Typo.body2" Style="font-family:monospace;">@log.WebhookEventId</MudText>
+                                        </div>
+                                    }
+                                    @if (log.DeliveryLogId.HasValue)
+                                    {
+                                        <div>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Delivery Log</MudText>
+                                            <MudLink Href="@($"/monitor/{log.DeliveryLogId}")">#@log.DeliveryLogId</MudLink>
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(log.Details))
+                                    {
+                                        <div>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Detalles</MudText>
+                                            <pre style="background:#0d0d0d; padding:8px; border-radius:4px; font-size:0.8rem; white-space:pre-wrap; word-break:break-word; margin:0;">@log.Details</pre>
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(log.ResponseBody))
+                                    {
+                                        <div>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Respuesta del destino</MudText>
+                                            <pre style="background:#1a0a0a; padding:8px; border-radius:4px; font-size:0.8rem; white-space:pre-wrap; word-break:break-word; max-height:300px; overflow:auto; margin:0;">@log.ResponseBody</pre>
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(log.Exception))
+                                    {
+                                        <div>
+                                            <MudText Typo="Typo.caption" Color="Color.Error">Excepción</MudText>
+                                            <pre style="background:#1a0a0a; padding:8px; border-radius:4px; font-size:0.78rem; white-space:pre-wrap; word-break:break-word; max-height:300px; overflow:auto; margin:0; color:#ff8a80;">@log.Exception</pre>
+                                        </div>
+                                    }
+                                </MudStack>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center"
+                  Spacing="2" Class="pa-4">
+            @if (_page > 1)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="PrevPage"
+                           StartIcon="@Icons.Material.Filled.ArrowBack">Anterior</MudButton>
+            }
+            <MudText Typo="Typo.body2">Página @_page</MudText>
+            @if (_logs.Count == _pageSize)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="NextPage"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">Siguiente</MudButton>
+            }
+        </MudStack>
+    </MudPaper>
+}
+else
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        No hay registros con los filtros seleccionados.
+    </MudAlert>
+}
+
+@code {
+    private List<SystemLog> _logs = [];
+    private List<string> _tenantSlugs = [];
+    private string _filterLevel = "";
+    private string _filterCategory = "";
+    private string _filterTenant = "";
+    private string _filterText = "";
+    private bool _autoRefresh = true;
+    private int _page = 1;
+    private const int _pageSize = 50;
+    private long _totalCount;
+    private long _infoCount;
+    private long _warningCount;
+    private long _errorCount;
+    private HashSet<long> _expandedIds = [];
+    private Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTenantSlugs();
+        await LoadLogs();
+        _timer = new Timer(async _ =>
+        {
+            if (!_autoRefresh) return;
+            await InvokeAsync(async () =>
+            {
+                await LoadLogs();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task LoadTenantSlugs()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        _tenantSlugs = await db.Tenants.OrderBy(t => t.Slug).Select(t => t.Slug).ToListAsync();
+    }
+
+    private async Task LoadLogs()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
+        var query = db.SystemLogs.AsQueryable();
+
+        if (!string.IsNullOrEmpty(_filterLevel) && Enum.TryParse<SystemLogLevel>(_filterLevel, out var lvl))
+            query = query.Where(l => l.Level == lvl);
+        if (!string.IsNullOrEmpty(_filterCategory) && Enum.TryParse<SystemLogCategory>(_filterCategory, out var cat))
+            query = query.Where(l => l.Category == cat);
+        if (!string.IsNullOrEmpty(_filterTenant))
+            query = query.Where(l => l.TenantSlug == _filterTenant);
+        if (!string.IsNullOrWhiteSpace(_filterText))
+        {
+            var t = _filterText.Trim();
+            query = query.Where(l =>
+                EF.Functions.Like(l.Message, $"%{t}%") ||
+                (l.Url != null && EF.Functions.Like(l.Url, $"%{t}%")) ||
+                (l.ResponseBody != null && EF.Functions.Like(l.ResponseBody, $"%{t}%")) ||
+                (l.Details != null && EF.Functions.Like(l.Details, $"%{t}%")));
+        }
+
+        _totalCount = await db.SystemLogs.CountAsync();
+        _infoCount = await db.SystemLogs.CountAsync(l => l.Level == SystemLogLevel.Information);
+        _warningCount = await db.SystemLogs.CountAsync(l => l.Level == SystemLogLevel.Warning);
+        _errorCount = await db.SystemLogs.CountAsync(l => l.Level == SystemLogLevel.Error);
+
+        _logs = await query
+            .OrderByDescending(l => l.Id)
+            .Skip((_page - 1) * _pageSize)
+            .Take(_pageSize)
+            .ToListAsync();
+    }
+
+    private void ToggleExpand(long id)
+    {
+        if (!_expandedIds.Add(id)) _expandedIds.Remove(id);
+    }
+
+    private async Task PrevPage() { _page--; await LoadLogs(); }
+    private async Task NextPage() { _page++; await LoadLogs(); }
+
+    private async Task ConfirmDeleteAll()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var n = await db.SystemLogs.ExecuteDeleteAsync();
+        Snackbar.Add($"Se eliminaron {n} registros", Severity.Success);
+        _page = 1;
+        await LoadLogs();
+    }
+
+    private static Color GetLevelColor(SystemLogLevel level) => level switch
+    {
+        SystemLogLevel.Information => Color.Info,
+        SystemLogLevel.Warning => Color.Warning,
+        SystemLogLevel.Error => Color.Error,
+        _ => Color.Default
+    };
+
+    private static Color GetHttpColor(int? statusCode) => statusCode switch
+    {
+        >= 200 and < 300 => Color.Success,
+        >= 300 and < 400 => Color.Warning,
+        null or 0 => Color.Default,
+        _ => Color.Error
+    };
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

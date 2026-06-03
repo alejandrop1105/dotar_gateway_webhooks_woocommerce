@@ -48,6 +48,8 @@ builder.Services.AddSingleton<RedisQueueService>();
 builder.Services.AddSingleton<TenantCacheService>();
 builder.Services.AddSingleton<TunnelStatusService>();
 builder.Services.AddSingleton<MonitorNotificationService>();
+builder.Services.AddSingleton<SystemLogService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SystemLogService>());
 builder.Services.AddTransient<ForwardingService>();
 builder.Services.AddScoped<Dotar.Gateway.Endpoints.ApiKeyEndpointFilter>();
 
