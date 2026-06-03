@@ -1,0 +1,24 @@
+# Artefactos de build (se regeneran dentro del container con dotnet restore/build)
+**/bin/
+**/obj/
+
+# Control de versiones y config de herramientas
+.git/
+.gitignore
+.gitattributes
+.vs/
+.vscode/
+.claude/
+.idea/
+*.user
+
+# Bases de datos locales y backups (la DB productiva vive en el volumen, no en la imagen)
+**/*.db
+**/*.db-shm
+**/*.db-wal
+*.bak
+*.bak.*
+
+# Docs (no se necesitan para compilar)
+docs/
+*.md
