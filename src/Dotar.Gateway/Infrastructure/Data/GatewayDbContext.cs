@@ -33,7 +33,10 @@ public class GatewayDbContext : DbContext
                 Name = "Estándar",
                 IsDefault = true,
                 CircuitBreakerThreshold = 5,
-                CircuitBreakerDurationSeconds = 30
+                CircuitBreakerDurationSeconds = 30,
+                // Valor estático: si se deja el default DateTime.UtcNow, el seed cambia en
+                // cada build y EF reporta PendingModelChangesWarning (20409) en cada arranque.
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             });
         });
 
