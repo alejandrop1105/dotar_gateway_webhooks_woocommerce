@@ -150,6 +150,10 @@ if ($activeContext -ne $Context) {
 }
 
 Write-Step "Desplegando: docker compose up -d --build"
+# BuildKit no tolera el daemon remoto vía SSH ("failed to list workers / write client
+# preface"). Forzamos el builder clásico, que transmite el contexto al daemon remoto.
+$env:DOCKER_BUILDKIT = "0"
+$env:COMPOSE_DOCKER_CLI_BUILD = "1"
 # SSH al server es intermitente: reintentar una vez ante fallo de handshake.
 docker compose up -d --build
 if ($LASTEXITCODE -ne 0) {
