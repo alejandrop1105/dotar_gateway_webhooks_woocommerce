@@ -33,7 +33,11 @@ public static class IngestEndpoints
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status401Unauthorized);
 
-        app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
+        app.MapGet("/health", (DeployHistoryService deploy) =>
+            {
+                deploy.Load();
+                return Results.Ok(new { status = "healthy", version = deploy.CurrentVersion, timestamp = DateTime.UtcNow });
+            })
             .WithName("HealthCheck");
     }
 

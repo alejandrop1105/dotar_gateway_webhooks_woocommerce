@@ -1,0 +1,14 @@
+{
+  "current": "1.0.0",
+  "history": [
+    {
+      "version": "1.0.0",
+      "builtAt": "2026-06-04T10:14:13-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "major",
+      "gitCommit": "bff3f50aa268c27625c9931a03f18bb0ef661324",
+      "changes": "[FEAT] Versión inicial del Webhooks Gateway: ingesta HMAC por tenant, forwarding con Polly (circuit breaker + reintentos), cola Redis, dashboard Blazor (tenants, grupos, políticas, monitor, logs, configuración), logging estructurado en SystemLogs y túnel Cloudflare."
+    }
+  ]
+}

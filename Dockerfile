@@ -19,6 +19,9 @@ RUN dotnet publish "./Dotar.Gateway.csproj" -c $BUILD_CONFIGURATION -o /app/publ
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+# Historial de versiones: queda junto al ejecutable (AppContext.BaseDirectory = /app)
+# para que DeployHistoryService lo lea en producción.
+COPY version.json ./version.json
 
 # Para SQLite necesitamos asegurarnos de que el usuario 'app' tenga permisos sobre la carpeta de datos.
 # Creamos la carpeta /app/data y le damos permisos a app (usuario ID 1654 en la imagen dotnet 8/9).
