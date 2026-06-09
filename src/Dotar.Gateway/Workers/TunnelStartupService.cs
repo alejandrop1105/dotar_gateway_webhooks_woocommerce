@@ -15,17 +15,20 @@ public class TunnelStartupService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TunnelStatusService _tunnelStatus;
     private readonly SystemLogService _systemLog;
+    private readonly CloudflareTunnelManager _tunnelManager;
     private readonly ILogger<TunnelStartupService> _logger;
 
     public TunnelStartupService(
         IServiceScopeFactory scopeFactory,
         TunnelStatusService tunnelStatus,
         SystemLogService systemLog,
+        CloudflareTunnelManager tunnelManager,
         ILogger<TunnelStartupService> logger)
     {
         _scopeFactory = scopeFactory;
         _tunnelStatus = tunnelStatus;
         _systemLog = systemLog;
+        _tunnelManager = tunnelManager;
         _logger = logger;
     }
 
@@ -69,16 +72,12 @@ public class TunnelStartupService : BackgroundService
                 ZoneId = zoneId
             };
 
-            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-            var tunnelLogger = loggerFactory.CreateLogger<CloudflareTunnelManager>();
-
-            var manager = new CloudflareTunnelManager(5200, config, tunnelLogger);
-            await manager.StartAsync();
+            // El estado de conexión real lo maneja el manager (vía TunnelStatusService).
+            await _tunnelManager.StartAsync(config);
 
             var tunnelUrl = $"https://{tunnelName}.{domain}";
-            _tunnelStatus.UpdateStatus("Conectado", tunnelUrl, isConnected: true);
-            _logger.LogInformation("✅ Túnel Cloudflare activo: {TunnelUrl}", tunnelUrl);
-            _systemLog.Info(SystemLogCategory.Tunnel, $"Túnel Cloudflare activo: {tunnelUrl}", url: tunnelUrl);
+            _logger.LogInformation("Túnel Cloudflare arrancado: {TunnelUrl}", tunnelUrl);
+            _systemLog.Info(SystemLogCategory.Tunnel, $"Túnel Cloudflare arrancado: {tunnelUrl}", url: tunnelUrl);
         }
         catch (Exception ex)
         {
