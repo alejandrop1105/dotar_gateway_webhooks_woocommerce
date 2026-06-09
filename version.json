@@ -1,6 +1,15 @@
 {
-  "current": "1.1.0",
+  "current": "1.1.1",
   "history": [
+    {
+      "version": "1.1.1",
+      "builtAt": "2026-06-09T12:19:54-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "patch",
+      "gitCommit": "8795fbf5df25ba30a36945dc294e8814fa6c1967",
+      "changes": "[FIX] fix(tunnel): reconciliar túnel contra Cloudflare y reflejar estado real | [FIX] fix(deploy): desactivar BuildKit para builds contra daemon remoto vía SSH | [CHORE] chore(release): bump version to 1.1.0"
+    },
     {
       "version": "1.1.0",
       "builtAt": "2026-06-05T12:01:41-03:00",
