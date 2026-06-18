@@ -1,8 +1,4 @@
-# Diseño técnico: Capa de Aplicación para operaciones de Tenant
-
-> Change: `capa-aplicacion-commands`
-> Fase: design (arquitectura + enfoque de implementación). No incluye specs ni tareas.
-> Alcance: solo CRUD de Tenant (crear, editar, borrar, toggle activo, actualizar target-url).
+# Diseño técnico: Capa de Aplicación para operaciones de Tenant (change capa-aplicacion-commands)
 
 ## 1. Resumen del enfoque
 
@@ -229,12 +225,12 @@ namespace Dotar.Gateway.Application;
 public sealed class TenantAppService
 {
     private readonly GatewayDbContext _db;
-    private readonly TenantCacheService _cache;
+    private readonly ITenantCacheService _cache;
     private readonly ILogger<TenantAppService> _logger;
 
     public TenantAppService(
         GatewayDbContext db,
-        TenantCacheService cache,
+        ITenantCacheService cache,
         ILogger<TenantAppService> logger)
         => (_db, _cache, _logger) = (db, cache, logger);
 
@@ -336,7 +332,7 @@ caso de uso. Esto mantiene el dominio limpio.
               │ inyecta           │ inyecta           │ inyecta
               ▼                   ▼                   ▼
    ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐
-   │ GatewayDbContext │  │ TenantCacheService│  │ ILogger<TenantApp...>│
+   │ GatewayDbContext │  │ ITenantCacheService│  │ ILogger<TenantApp...>│
    │ [Scoped]         │  │ [Singleton]       │  │                      │
    └──────────────────┘  └───────┬───────────┘  └──────────────────────┘
         Scoped→Scoped: OK         │ Scoped→Singleton: OK (dirección válida)
@@ -349,7 +345,7 @@ caso de uso. Esto mantiene el dominio limpio.
 Reglas marcadas en el diagrama:
 
 - `TenantAppService` (Scoped) → `GatewayDbContext` (Scoped): válido.
-- `TenantAppService` (Scoped) → `TenantCacheService` (Singleton): válido (Scoped puede consumir Singleton).
+- `TenantAppService` (Scoped) → `ITenantCacheService` (Singleton): válido (Scoped puede consumir Singleton).
 - INVARIANTE: ningún Singleton inyecta `TenantAppService`. `TenantCacheService` sigue resolviendo su DbContext con
   `IServiceScopeFactory` (`TenantCacheService.cs:52`), sin cambios.
 
@@ -370,7 +366,7 @@ Dos niveles de red de seguridad:
    sus deps por DI. Estrategia:
    - `GatewayDbContext`: instancia real con `UseSqlite` en memoria (mismo enfoque que la factory de integración),
      preferido sobre mockear EF (mockear `DbSet`/`AnyAsync` es frágil). Patrón ya presente en el repo.
-   - `TenantCacheService` (Singleton): es una clase concreta sin interfaz hoy. Para verificar la invalidación, dos
+   - `ITenantCacheService` (Singleton): es una clase concreta sin interfaz hoy. Para verificar la invalidación, dos
      opciones — (a) introducir `ITenantCacheService` y mockear, o (b) usar la instancia real con `IMemoryCache` en
      memoria y aserciones indirectas. Recomendación: **(a) extraer interfaz mínima** `ITenantCacheService` con
      `Invalidate(string)` (y `GetBySlugAsync` si interesa) para poder mockear con Moq/NSubstitute y aislar el AppService
