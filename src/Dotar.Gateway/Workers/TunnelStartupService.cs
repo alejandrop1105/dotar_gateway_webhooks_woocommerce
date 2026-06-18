@@ -1,3 +1,4 @@
+using Dotar.Gateway.Domain.Entities;
 using Dotar.Gateway.Infrastructure.Data;
 using Dotar.Gateway.Infrastructure.Services;
 using Dotar.Gateway.Infrastructure.Tunnel;
@@ -13,15 +14,21 @@ public class TunnelStartupService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TunnelStatusService _tunnelStatus;
+    private readonly SystemLogService _systemLog;
+    private readonly CloudflareTunnelManager _tunnelManager;
     private readonly ILogger<TunnelStartupService> _logger;
 
     public TunnelStartupService(
         IServiceScopeFactory scopeFactory,
         TunnelStatusService tunnelStatus,
+        SystemLogService systemLog,
+        CloudflareTunnelManager tunnelManager,
         ILogger<TunnelStartupService> logger)
     {
         _scopeFactory = scopeFactory;
         _tunnelStatus = tunnelStatus;
+        _systemLog = systemLog;
+        _tunnelManager = tunnelManager;
         _logger = logger;
     }
 
@@ -48,6 +55,7 @@ public class TunnelStartupService : BackgroundService
             {
                 _logger.LogInformation("No hay credenciales Cloudflare configuradas. Túnel no iniciado.");
                 _tunnelStatus.UpdateStatus("⚠️ Sin configurar — ir a Configuración");
+                _systemLog.Info(SystemLogCategory.Tunnel, "Cloudflare Tunnel: sin credenciales configuradas — saltando arranque");
                 return;
             }
 
@@ -64,20 +72,18 @@ public class TunnelStartupService : BackgroundService
                 ZoneId = zoneId
             };
 
-            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-            var tunnelLogger = loggerFactory.CreateLogger<CloudflareTunnelManager>();
-
-            var manager = new CloudflareTunnelManager(5200, config, tunnelLogger);
-            await manager.StartAsync();
+            // El estado de conexión real lo maneja el manager (vía TunnelStatusService).
+            await _tunnelManager.StartAsync(config);
 
             var tunnelUrl = $"https://{tunnelName}.{domain}";
-            _tunnelStatus.UpdateStatus("Conectado", tunnelUrl, isConnected: true);
-            _logger.LogInformation("✅ Túnel Cloudflare activo: {TunnelUrl}", tunnelUrl);
+            _logger.LogInformation("Túnel Cloudflare arrancado: {TunnelUrl}", tunnelUrl);
+            _systemLog.Info(SystemLogCategory.Tunnel, $"Túnel Cloudflare arrancado: {tunnelUrl}", url: tunnelUrl);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al iniciar túnel Cloudflare automáticamente");
             _tunnelStatus.UpdateStatus($"❌ Error: {ex.Message}");
+            _systemLog.Error(SystemLogCategory.Tunnel, $"Error al iniciar túnel Cloudflare: {ex.Message}", ex: ex);
         }
     }
 

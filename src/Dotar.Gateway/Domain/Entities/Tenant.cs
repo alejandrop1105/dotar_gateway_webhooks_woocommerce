@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Dotar.Gateway.Domain.Entities;
 
 /// <summary>
@@ -6,6 +8,19 @@ namespace Dotar.Gateway.Domain.Entities;
 /// </summary>
 public class Tenant
 {
+    // Patrón idéntico al de TenantApiEndpoints.cs:16 — fuente de verdad movida al dominio.
+    // Permite: 1 char alfanumérico ó 2-100 chars alfanuméricos con guiones sin guión al inicio/final.
+    private static readonly Regex SlugRegex = new(
+        "^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$|^[a-z0-9]$",
+        RegexOptions.Compiled);
+
+    /// <summary>Normaliza un slug crudo a su forma canónica: trim + lowercase invariante.</summary>
+    public static string NormalizeSlug(string raw) => raw.Trim().ToLowerInvariant();
+
+    /// <summary>Valida que un slug YA normalizado cumpla el formato canónico del proyecto.</summary>
+    public static bool IsValidSlug(string normalizedSlug) => SlugRegex.IsMatch(normalizedSlug);
+
+
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;

@@ -1,0 +1,188 @@
+@page "/historial-deploys"
+@using Dotar.Gateway.Infrastructure.Services
+@inject DeployHistoryService DeploySvc
+
+<PageTitle>Historial de Deploys — Webhooks Gateway</PageTitle>
+
+@code {
+    protected override void OnInitialized()
+    {
+        DeploySvc.Load();
+    }
+}
+
+<div style="max-width: 860px; margin: 0 auto;">
+
+    @* ─── HEADER ─── *@
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-6">
+        <MudIcon Icon="@Icons.Material.Filled.RocketLaunch"
+                 Style="font-size: 32px; color: var(--mud-palette-primary);" />
+        <div>
+            <MudText Typo="Typo.h4" Class="ma-0">Historial de Deploys</MudText>
+            <MudText Typo="Typo.body2" Class="ma-0" Style="opacity: 0.6;">
+                Pipeline de versiones del sistema
+            </MudText>
+        </div>
+        <MudSpacer />
+        <div style="text-align: right;">
+            <MudChip T="string" Color="Color.Success" Variant="Variant.Filled" Size="Size.Medium"
+                     Style="font-size: 15px; border-radius: 20px;">
+                @($"v{DeploySvc.CurrentVersion}")
+            </MudChip>
+            <MudText Typo="Typo.caption" Class="ma-0 mt-1 d-block" Style="opacity: 0.5;">
+                versión instalada
+            </MudText>
+        </div>
+    </MudStack>
+
+    @* ─── PIPELINE ─── *@
+    @if (DeploySvc.History.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No hay registros de deploy. El archivo <code>version.json</code> no fue encontrado o está vacío.
+        </MudAlert>
+    }
+    else
+    {
+        <div style="position: relative;">
+            @* Línea vertical del pipeline *@
+            <div style="position: absolute; left: 23px; top: 12px; bottom: 12px; width: 2px;
+                        background: linear-gradient(to bottom, var(--mud-palette-primary), var(--mud-palette-lines-default));
+                        border-radius: 2px; z-index: 0;"></div>
+
+            @foreach (var (entry, index) in DeploySvc.History.Select((e, i) => (e, i)))
+            {
+                var isLatest = index == 0;
+                var dotColor = isLatest ? "var(--mud-palette-success)" : "var(--mud-palette-lines-default)";
+                var cardOpacity = isLatest ? "1" : "0.75";
+                var borderColor = isLatest ? "var(--mud-palette-success)" : "var(--mud-palette-lines-default)";
+
+                <div style="display: flex; gap: 1.25rem; margin-bottom: 1.5rem; position: relative; z-index: 1;">
+
+                    @* Punto del pipeline *@
+                    <div style="flex-shrink: 0; width: 48px; display: flex; flex-direction: column; align-items: center;">
+                        <div style="width: 20px; height: 20px; border-radius: 50%;
+                                    background: @dotColor;
+                                    border: 3px solid var(--mud-palette-background);
+                                    box-shadow: 0 0 0 3px @dotColor;
+                                    margin-top: 4px;
+                                    @(isLatest ? "animation: pulse-dot 2s infinite;" : "")">
+                        </div>
+                    </div>
+
+                    @* Card de la versión *@
+                    <div style="flex: 1; opacity: @cardOpacity;">
+                        <MudPaper Elevation="2"
+                                  Style="@($"border-left: 3px solid {borderColor}; padding: 1rem 1.25rem;")">
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2"
+                                      Style="flex-wrap: wrap;">
+
+                                @* Versión *@
+                                <MudChip T="string"
+                                         Color="@(isLatest ? Color.Success : Color.Default)"
+                                         Variant="Variant.Filled" Size="Size.Small"
+                                         Style="font-weight: 700; font-size: 13px;">
+                                    @($"v{entry.Version}")
+                                </MudChip>
+
+                                @* Tipo de bump con color semántico *@
+                                @{
+                                    var (bumpLabel, bumpColor) = entry.BumpType?.ToLowerInvariant() switch
+                                    {
+                                        "major" => ("● MAJOR", "var(--mud-palette-error)"),
+                                        "minor" => ("● MINOR", "var(--mud-palette-warning)"),
+                                        _       => ("● PATCH", "var(--mud-palette-info)")
+                                    };
+                                }
+                                <span style="font-size: 11px; font-weight: 600; letter-spacing: 1px;
+                                             color: @bumpColor; font-family: monospace;">
+                                    @bumpLabel
+                                </span>
+
+                                @if (isLatest)
+                                {
+                                    <MudChip T="string" Color="Color.Info" Variant="Variant.Filled" Size="Size.Small"
+                                             Style="font-size: 10px; letter-spacing: 1px;">
+                                        ACTUAL
+                                    </MudChip>
+                                }
+
+                                <MudSpacer />
+
+                                @* Commit hash *@
+                                @if (!string.IsNullOrEmpty(entry.GitCommit))
+                                {
+                                    <span style="font-family: monospace; font-size: 11px; opacity: 0.55;
+                                                 background: var(--mud-palette-background-gray); padding: 2px 6px; border-radius: 4px;">
+                                        @entry.GitCommit[..Math.Min(10, entry.GitCommit.Length)]
+                                    </span>
+                                }
+
+                                @* Fecha *@
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Schedule" Style="font-size: 14px; opacity: 0.5;" />
+                                    <MudText Typo="Typo.caption" Class="ma-0" Style="opacity: 0.6;">
+                                        @entry.BuiltAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")
+                                    </MudText>
+                                </MudStack>
+                            </MudStack>
+
+                            @* Descripción de cambios *@
+                            <MudText Typo="Typo.body1" Class="mb-3" Style="line-height: 1.5;">
+                                @entry.Changes
+                            </MudText>
+
+                            @* Metadata footer *@
+                            <MudStack Row="true" Spacing="6"
+                                      Style="opacity: 0.55; font-size: 12px; border-top: 1px solid var(--mud-palette-divider); padding-top: 0.6rem;">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Person" Style="font-size: 14px;" />
+                                    <span>@entry.DeployedBy</span>
+                                </MudStack>
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Dns" Style="font-size: 14px;" />
+                                    <span>@entry.Host</span>
+                                </MudStack>
+                            </MudStack>
+                        </MudPaper>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* ─── STATS ─── *@
+    @if (DeploySvc.History.Count > 0)
+    {
+        <MudPaper Elevation="1" Class="mt-4 pa-4" Style="opacity: 0.85;">
+            <MudStack Row="true" Spacing="8" Justify="Justify.Center">
+                <div style="text-align: center;">
+                    <MudText Typo="Typo.h5" Class="ma-0" Style="color: var(--mud-palette-primary);">
+                        @DeploySvc.History.Count
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="opacity: 0.6;">deploys totales</MudText>
+                </div>
+                <div style="text-align: center;">
+                    <MudText Typo="Typo.h5" Class="ma-0" Style="color: var(--mud-palette-success);">
+                        @($"v{DeploySvc.CurrentVersion}")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="opacity: 0.6;">versión actual</MudText>
+                </div>
+                <div style="text-align: center;">
+                    <MudText Typo="Typo.h5" Class="ma-0">
+                        @DeploySvc.History[0].BuiltAt.LocalDateTime.ToString("dd MMM yyyy")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="opacity: 0.6;">último deploy</MudText>
+                </div>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+<style>
+    @@keyframes pulse-dot {
+        0%, 100% { box-shadow: 0 0 0 3px var(--mud-palette-success); }
+        50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--mud-palette-success) 30%, transparent); }
+    }
+</style>

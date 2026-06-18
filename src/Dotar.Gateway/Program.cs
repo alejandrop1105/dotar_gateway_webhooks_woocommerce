@@ -1,5 +1,6 @@
 using Dotar.Gateway.Endpoints;
 using Dotar.Gateway.Infrastructure.Data;
+using Microsoft.AspNetCore.DataProtection;
 using Dotar.Gateway.Infrastructure.Services;
 using Dotar.Gateway.Workers;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,17 @@ builder.Services.AddDbContext<GatewayDbContext>(options =>
         w.Log(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 
+// ─── Data Protection: persistir las keys junto a la DB (en el volumen /app/data)
+//     para no invalidar las sesiones del dashboard en cada redeploy ───
+var sqliteConnForKeys = builder.Configuration.GetConnectionString("Sqlite") ?? "Data Source=gateway.db";
+var dbFilePath = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(sqliteConnForKeys).DataSource;
+var dataDir = Path.GetDirectoryName(Path.GetFullPath(dbFilePath));
+var keysDir = Path.Combine(string.IsNullOrWhiteSpace(dataDir) ? "." : dataDir, "dataprotection-keys");
+Directory.CreateDirectory(keysDir);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysDir))
+    .SetApplicationName("DotarGateway");
+
 // ─── Redis (lazy connect — no crash si no está disponible) ───
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
@@ -45,11 +57,16 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<HmacSignatureValidator>();
 builder.Services.AddSingleton<ApiKeyService>();
 builder.Services.AddSingleton<RedisQueueService>();
-builder.Services.AddSingleton<TenantCacheService>();
+builder.Services.AddSingleton<ITenantCacheService, TenantCacheService>();
 builder.Services.AddSingleton<TunnelStatusService>();
+builder.Services.AddSingleton<Dotar.Gateway.Infrastructure.Tunnel.CloudflareTunnelManager>();
 builder.Services.AddSingleton<MonitorNotificationService>();
+builder.Services.AddSingleton<SystemLogService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SystemLogService>());
+builder.Services.AddSingleton<DeployHistoryService>();
 builder.Services.AddTransient<ForwardingService>();
 builder.Services.AddScoped<Dotar.Gateway.Endpoints.ApiKeyEndpointFilter>();
+builder.Services.AddScoped<Dotar.Gateway.Application.TenantAppService>();
 
 // ─── HttpClientFactory para reenvío ───────────────────
 builder.Services.AddHttpClient("GatewayForwarder", client =>

@@ -1,0 +1,34 @@
+project: dotar_gateway_webhooks_woocommerce
+initialized: "2026-06-17"
+artifact_store: hybrid
+
+context: |
+  .NET 9 Webhooks Gateway. Blazor Server + MudBlazor v9 dashboard.
+  ASP.NET Minimal APIs para ingesta (POST /ingest/{slug}) y API de tenants.
+  EF Core + SQLite WAL (GatewayDbContext), Redis como cola, Polly v8 Circuit Breaker.
+  BackgroundService: WebhookDispatcherWorker. csproj: src/Dotar.Gateway/Dotar.Gateway.csproj.
+  Arquitectura: Domain (Entities/Models) + Infrastructure (Data + Services) + Endpoints + Workers + Dashboard.
+  Deuda activa: sin capa Application (use cases/comandos).
+  Código, comentarios, UI y commits en español.
+
+testing:
+  strict_tdd: true
+  test_command: "dotnet test tests/Dotar.Gateway.Tests/Dotar.Gateway.Tests.csproj"
+  framework: xUnit 2.9.2
+  runner: Microsoft.NET.Test.Sdk 17.12.0
+  coverage: coverlet.collector 6.0.2
+  coverage_command: "dotnet test tests/Dotar.Gateway.Tests/Dotar.Gateway.Tests.csproj --collect:\"XPlat Code Coverage\""
+  integration: Microsoft.AspNetCore.Mvc.Testing 9.0.3 (WebApplicationFactory)
+  layers:
+    unit: true
+    integration: true
+    e2e: false
+
+phase_rules:
+  proposal: "Artefactos SDD en español neutro/profesional."
+  spec: "Incluir criterios de aceptación verificables. Español neutro."
+  design: "Documentar decisiones de arquitectura con tradeoffs. Español neutro."
+  tasks: "Tareas atómicas con estimación. Incluir Review Workload Forecast."
+  apply: "Strict TDD Mode activo. Test runner: dotnet test. Seguir strict-tdd.md."
+  verify: "Validar contra spec + tasks. Usar strict-tdd-verify.md."
+  archive: "Cerrar cambio y persistir estado final en engram + openspec."

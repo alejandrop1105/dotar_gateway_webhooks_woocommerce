@@ -287,6 +287,94 @@ public class TenantApiEndpointsTests : IClassFixture<GatewayWebApplicationFactor
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
     }
 
+    [Fact]
+    public async Task PutTargetUrl_ResponseIncludePreviousUrl()
+    {
+        var client = AuthedClient();
+        var slug = $"prev-url-{Guid.NewGuid():N}".Substring(0, 28);
+        var urlOriginal = "https://original.com/webhooks";
+        var urlNueva    = "https://nueva.com/webhooks";
+
+        await client.PostAsJsonAsync("/api/tenants", new
+        {
+            name      = "Prev URL Test",
+            slug,
+            targetUrl = urlOriginal
+        });
+
+        var resp = await client.PutAsJsonAsync($"/api/tenants/{slug}/target-url", new
+        {
+            targetUrl = urlNueva
+        });
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var body = await resp.Content.ReadFromJsonAsync<TargetUrlUpdatedResponse>();
+        Assert.NotNull(body);
+        Assert.Equal(slug,        body!.Slug);
+        Assert.Equal(urlNueva,    body.TargetUrl);
+        Assert.Equal(urlOriginal, body.PreviousUrl);
+        Assert.NotNull(body.UpdatedAt);
+    }
+
+    // ─── PUT /api/tenants/{slug} ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Put_UpdatesTenant_HappyPath()
+    {
+        var client = AuthedClient();
+        var slug = $"put-update-{Guid.NewGuid():N}".Substring(0, 30);
+
+        await client.PostAsJsonAsync("/api/tenants", new
+        {
+            name = "Nombre Original", slug, targetUrl = "https://original.com/h"
+        });
+
+        var resp = await client.PutAsJsonAsync($"/api/tenants/{slug}", new
+        {
+            name = "Nombre Actualizado",
+            targetUrl = "https://actualizado.com/h"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var tenant = await db.Tenants.FirstAsync(t => t.Slug == slug);
+        Assert.Equal("Nombre Actualizado", tenant.Name);
+        Assert.Equal("https://actualizado.com/h", tenant.TargetUrl);
+        Assert.NotNull(tenant.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task Put_NonExistentSlug_Returns404()
+    {
+        var client = AuthedClient();
+        var resp = await client.PutAsJsonAsync("/api/tenants/slug-que-no-existe", new
+        {
+            name = "Nombre"
+        });
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Put_EmptyName_Returns400()
+    {
+        var client = AuthedClient();
+        var slug = $"put-emptyname-{Guid.NewGuid():N}".Substring(0, 30);
+
+        await client.PostAsJsonAsync("/api/tenants", new
+        {
+            name = "Nombre Original", slug, targetUrl = "https://original.com/h"
+        });
+
+        var resp = await client.PutAsJsonAsync($"/api/tenants/{slug}", new
+        {
+            name = ""
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
     private record CreatedResponse(
         string Slug,
         string Name,
@@ -303,4 +391,11 @@ public class TenantApiEndpointsTests : IClassFixture<GatewayWebApplicationFactor
         string SignatureScheme,
         string? SignatureHeader,
         bool IsActive);
+
+    private record TargetUrlUpdatedResponse(
+        string Slug,
+        string Name,
+        string TargetUrl,
+        string PreviousUrl,
+        DateTime? UpdatedAt);
 }

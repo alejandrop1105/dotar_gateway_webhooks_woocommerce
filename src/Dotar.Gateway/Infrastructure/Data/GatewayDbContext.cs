@@ -15,6 +15,7 @@ public class GatewayDbContext : DbContext
     public DbSet<RetryPolicy> RetryPolicies => Set<RetryPolicy>();
     public DbSet<RetryStep> RetrySteps => Set<RetryStep>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<SystemLog> SystemLogs => Set<SystemLog>();
 
     public GatewayDbContext(DbContextOptions<GatewayDbContext> options)
         : base(options) { }
@@ -32,7 +33,10 @@ public class GatewayDbContext : DbContext
                 Name = "Estándar",
                 IsDefault = true,
                 CircuitBreakerThreshold = 5,
-                CircuitBreakerDurationSeconds = 30
+                CircuitBreakerDurationSeconds = 30,
+                // Valor estático: si se deja el default DateTime.UtcNow, el seed cambia en
+                // cada build y EF reporta PendingModelChangesWarning (20409) en cada arranque.
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             });
         });
 
@@ -128,6 +132,26 @@ public class GatewayDbContext : DbContext
             e.HasIndex(s => s.Key).IsUnique();
             e.Property(s => s.Key).IsRequired().HasMaxLength(100);
             e.Property(s => s.Value).IsRequired().HasMaxLength(2000);
+        });
+
+        // ─── SystemLog ───
+        modelBuilder.Entity<SystemLog>(e =>
+        {
+            e.HasKey(l => l.Id);
+            e.HasIndex(l => l.CreatedAt);
+            e.HasIndex(l => l.Level);
+            e.HasIndex(l => l.Category);
+            e.HasIndex(l => l.TenantSlug);
+            e.HasIndex(l => l.WebhookEventId);
+            e.HasIndex(l => l.DeliveryLogId);
+            e.Property(l => l.Level).HasConversion<string>().HasMaxLength(20);
+            e.Property(l => l.Category).HasConversion<string>().HasMaxLength(20);
+            e.Property(l => l.Message).IsRequired().HasMaxLength(2000);
+            e.Property(l => l.TenantSlug).HasMaxLength(100);
+            e.Property(l => l.Url).HasMaxLength(2000);
+            e.Property(l => l.ResponseBody).HasColumnType("TEXT");
+            e.Property(l => l.Details).HasColumnType("TEXT");
+            e.Property(l => l.Exception).HasColumnType("TEXT");
         });
     }
 }

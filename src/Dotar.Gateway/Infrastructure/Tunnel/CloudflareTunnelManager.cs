@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Runtime.InteropServices;
+using Dotar.Gateway.Infrastructure.Services;
 
 namespace Dotar.Gateway.Infrastructure.Tunnel;
 
@@ -21,12 +22,18 @@ public class CloudflareTunnelManager : IDisposable
     private readonly int _localPort;
     private readonly string _exePath;
     private readonly string _configPath;
-    private readonly CloudflareConfig _config;
+    private readonly TunnelStatusService _status;
+    private CloudflareConfig _config = null!; // se asigna en StartAsync antes de cualquier uso
     private readonly ILogger<CloudflareTunnelManager> _logger;
     private bool _isInstalling;
     private bool _stopRequested;
     private bool _isConnected;
     private TunnelLocalConfig? _localConfig;
+
+    public bool IsConnected => _isConnected;
+    public string? TunnelUrl => _config is { } c && !string.IsNullOrWhiteSpace(c.Hostname)
+        ? $"https://{c.Hostname}"
+        : null;
 
     private static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     private static string ExeName => IsWindows ? "cloudflared.exe" : "cloudflared";
@@ -40,25 +47,33 @@ public class CloudflareTunnelManager : IDisposable
     public event EventHandler<string>? OnStatusChanged;
 
     public CloudflareTunnelManager(
-        int localPort,
-        CloudflareConfig config,
-        ILogger<CloudflareTunnelManager> logger)
+        ILogger<CloudflareTunnelManager> logger,
+        TunnelStatusService status)
     {
-        _localPort = localPort;
-        _config = config;
+        _localPort = 5200;
         _logger = logger;
-        _exePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ExeName);
-        _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tunnel_config.json");
+        _status = status;
+
+        var targetDir = AppDomain.CurrentDomain.BaseDirectory;
+        var dataDir = Path.Combine(targetDir, "data");
+        if (Directory.Exists(dataDir))
+        {
+            targetDir = dataDir;
+        }
+
+        _exePath = Path.Combine(targetDir, ExeName);
+        _configPath = Path.Combine(targetDir, "tunnel_config.json");
 
         _watchdogTimer = new System.Timers.Timer(5000);
         _watchdogTimer.Elapsed += WatchdogTimer_Elapsed;
     }
 
     /// <summary>
-    /// Arranca el túnel completo: auto-descarga → provisionar → ejecutar.
+    /// Arranca el túnel completo: auto-descarga → reconciliar/provisionar → ejecutar.
     /// </summary>
-    public async Task StartAsync()
+    public async Task StartAsync(CloudflareConfig config)
     {
+        _config = config;
         _stopRequested = false;
         if (_isInstalling) return;
 
@@ -74,6 +89,8 @@ public class CloudflareTunnelManager : IDisposable
             if (!CloudflaredExists()) return;
         }
 
+        var needsProvision = true;
+
         if (File.Exists(_configPath))
         {
             _localConfig = LoadLocalConfig();
@@ -82,17 +99,46 @@ public class CloudflareTunnelManager : IDisposable
                 _localConfig.Hostname = _config.Hostname;
                 SaveLocalConfig(_localConfig);
             }
-            NotifyStatus("Configuración local encontrada, conectando túnel existente...", "🟡");
-            _logger.LogInformation("Reutilizando túnel existente: {Hostname}", _localConfig.Hostname);
+
+            // Reconciliar contra Cloudflare: el túnel pudo haberse borrado.
+            using var http = CreateHttpClient();
+            if (await TunnelExistsAsync(http, _localConfig.TunnelId))
+            {
+                NotifyStatus("Configuración local encontrada, conectando túnel existente...", "🟡");
+                _logger.LogInformation("Reutilizando túnel existente: {Hostname}", _localConfig.Hostname);
+                // Garantizar que el registro DNS exista y apunte al túnel correcto.
+                await EnsureDnsRecordAsync(http, _localConfig.TunnelId);
+                needsProvision = false;
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "El túnel local {TunnelId} ya no existe en Cloudflare. Re-provisionando...",
+                    _localConfig.TunnelId);
+                NotifyStatus("Túnel no encontrado en Cloudflare, re-provisionando...", "🟡");
+                try { File.Delete(_configPath); } catch { /* best effort */ }
+                _localConfig = null;
+            }
         }
-        else
+
+        if (needsProvision)
         {
-            NotifyStatus("Primera ejecución: provisionando túnel en Cloudflare...", "🟡");
+            NotifyStatus("Provisionando túnel en Cloudflare...", "🟡");
             if (!await ProvisionTunnelAsync()) return;
         }
 
         OnUrlGenerated?.Invoke(this, $"https://{_config.Hostname}");
         StartTunnelProcess();
+    }
+
+    /// <summary>
+    /// Detiene el proceso/watchdog actual y vuelve a arrancar (reconciliando contra Cloudflare).
+    /// Usado por el botón "Crear / Reconectar Túnel".
+    /// </summary>
+    public async Task RestartAsync(CloudflareConfig config)
+    {
+        Stop();
+        await StartAsync(config);
     }
 
     public void Stop()
@@ -102,6 +148,32 @@ public class CloudflareTunnelManager : IDisposable
         _watchdogTimer.Stop();
         KillProcessSafely();
         NotifyStatus("Detenido intencionalmente", "🔴");
+    }
+
+    /// <summary>
+    /// Verifica vía API que el túnel siga existiendo (y no esté borrado) en Cloudflare.
+    /// Ante error de red devuelve true para no re-provisionar de forma destructiva.
+    /// </summary>
+    private async Task<bool> TunnelExistsAsync(HttpClient http, string tunnelId)
+    {
+        if (string.IsNullOrWhiteSpace(tunnelId)) return false;
+        try
+        {
+            var url = $"{CloudflareApiBase}/accounts/{_config.AccountId}/cfd_tunnel/{tunnelId}";
+            var response = await http.GetAsync(url);
+            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+
+            if (!response.IsSuccessStatusCode || json?["success"]?.GetValue<bool>() != true)
+                return false;
+
+            var deletedAt = json?["result"]?["deleted_at"];
+            return deletedAt is null || deletedAt.GetValueKind() == System.Text.Json.JsonValueKind.Null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo verificar existencia del túnel {TunnelId}; se asume válido", tunnelId);
+            return true;
+        }
     }
 
     // ─── Provisionamiento vía API Cloudflare ────────────
@@ -247,6 +319,7 @@ public class CloudflareTunnelManager : IDisposable
     private async Task EnsureDnsRecordAsync(HttpClient http, string tunnelId)
     {
         var hostname = _config.Hostname;
+        var expectedContent = $"{tunnelId}.cfargotunnel.com";
         var checkUrl = $"{CloudflareApiBase}/zones/{_config.ZoneId}/dns_records?name={hostname}&type=CNAME";
         var checkResponse = await http.GetAsync(checkUrl);
         var checkJson = JsonNode.Parse(await checkResponse.Content.ReadAsStringAsync());
@@ -256,7 +329,27 @@ public class CloudflareTunnelManager : IDisposable
             var records = checkJson["result"]?.AsArray();
             if (records is not null && records.Count > 0)
             {
-                _logger.LogInformation("Registro DNS ya existe: {Hostname}", hostname);
+                var record = records[0]!;
+                var recordId = record["id"]?.GetValue<string>();
+                var currentContent = record["content"]?.GetValue<string>();
+
+                if (currentContent == expectedContent)
+                {
+                    _logger.LogInformation("Registro DNS ya correcto: {Hostname}", hostname);
+                    return;
+                }
+
+                // CNAME existe pero apunta a otro túnel (ej: uno borrado) → actualizar.
+                NotifyStatus($"Actualizando registro DNS: {hostname}...", "🟡");
+                var patchBody = new { type = "CNAME", name = hostname, content = expectedContent, proxied = true };
+                var patchContent = new StringContent(JsonSerializer.Serialize(patchBody), Encoding.UTF8, "application/json");
+                var patchResponse = await http.PutAsync(
+                    $"{CloudflareApiBase}/zones/{_config.ZoneId}/dns_records/{recordId}", patchContent);
+
+                if (patchResponse.IsSuccessStatusCode)
+                    _logger.LogInformation("DNS CNAME actualizado: {Hostname} → {Content}", hostname, expectedContent);
+                else
+                    _logger.LogWarning("Advertencia al actualizar DNS: {Error}", await patchResponse.Content.ReadAsStringAsync());
                 return;
             }
         }
@@ -266,7 +359,7 @@ public class CloudflareTunnelManager : IDisposable
         {
             type = "CNAME",
             name = hostname,
-            content = $"{tunnelId}.cfargotunnel.com",
+            content = expectedContent,
             proxied = true
         };
 
@@ -323,8 +416,15 @@ public class CloudflareTunnelManager : IDisposable
 
         if (e.Data.Contains("Registered tunnel connection") && !_isConnected)
         {
-            _isConnected = true;
-            NotifyStatus("Establecido y Público", "🟢");
+            NotifyStatus("Establecido y Público", "🟢", isConnected: true);
+        }
+        // El túnel fue borrado / credenciales inválidas: bajar el estado a desconectado.
+        else if (_isConnected &&
+                 (e.Data.Contains("Unauthorized") ||
+                  e.Data.Contains("tunnel not found") ||
+                  e.Data.Contains("Couldn't connect to tunnel")))
+        {
+            NotifyStatus("Túnel rechazado por Cloudflare (¿borrado?)", "🔴", isConnected: false);
         }
     }
 
@@ -421,8 +521,12 @@ public class CloudflareTunnelManager : IDisposable
         return client;
     }
 
-    private void NotifyStatus(string message, string icon)
+    private void NotifyStatus(string message, string icon, bool isConnected = false)
     {
+        _isConnected = isConnected;
+        var url = isConnected ? TunnelUrl : null;
+        // El estado de la UI refleja la conexión REAL de cloudflared, no un optimismo.
+        _status.UpdateStatus($"{icon} {message}", url, isConnected);
         OnStatusChanged?.Invoke(this, $"{icon} {message}");
     }
 

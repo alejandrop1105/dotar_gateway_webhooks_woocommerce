@@ -12,6 +12,9 @@ public class QueuedWebhook
     public string Payload { get; set; } = string.Empty;
     public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Id de evento webhook único (correlación entre logs e intentos).</summary>
+    public Guid EventId { get; set; } = Guid.NewGuid();
+
     /// <summary>
     /// Headers del webhook entrante que deben reenviarse verbatim al downstream
     /// (ya filtrados por HeaderForwardingPolicy). Clave = nombre exacto del header.

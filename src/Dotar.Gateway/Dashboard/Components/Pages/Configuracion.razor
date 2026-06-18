@@ -6,6 +6,7 @@
 @using Microsoft.EntityFrameworkCore
 @inject IServiceScopeFactory ScopeFactory
 @inject TunnelStatusService TunnelStatus
+@inject CloudflareTunnelManager TunnelManager
 @inject ApiKeyService ApiKey
 @inject IJSRuntime JS
 @inject ILogger<Configuracion> Logger
@@ -218,23 +219,17 @@
     private async Task CreateTunnel()
     {
         _isCreatingTunnel = true; _message = null;
-        TunnelStatus.UpdateStatus("⏳ Creando túnel...");
         try
         {
-            using var scope = ScopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
             var config = new CloudflareConfig
             {
                 TunnelName = _tunnelName, Domain = _domain,
                 ApiToken = _apiToken, AccountId = _accountId, ZoneId = _zoneId
             };
-            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-            var tunnelLogger = loggerFactory.CreateLogger<CloudflareTunnelManager>();
-            var manager = new CloudflareTunnelManager(5200, config, tunnelLogger);
-            await manager.StartAsync();
-            var tunnelUrl = $"https://{_tunnelName}.{_domain}";
-            TunnelStatus.UpdateStatus("Conectado", tunnelUrl, isConnected: true);
-            _message = $"✅ Túnel creado: {tunnelUrl}";
+            // Reconcilia contra Cloudflare: reusa si vive, recrea si fue borrado.
+            // El estado real (verde/rojo) lo refleja el badge cuando cloudflared conecta.
+            await TunnelManager.RestartAsync(config);
+            _message = "⏳ Reconectando… verificá el estado del túnel en la barra superior.";
             _messageClass = "alert-success";
         }
         catch (Exception ex)
@@ -242,7 +237,6 @@
             Logger.LogError(ex, "Error al crear túnel Cloudflare");
             _message = $"Error al crear túnel: {ex.Message}";
             _messageClass = "alert-danger";
-            TunnelStatus.UpdateStatus($"❌ Error: {ex.Message}");
         }
         finally { _isCreatingTunnel = false; }
     }
