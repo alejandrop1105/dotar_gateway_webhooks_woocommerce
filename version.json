@@ -1,6 +1,15 @@
 {
-  "current": "1.1.1",
+  "current": "1.1.2",
   "history": [
+    {
+      "version": "1.1.2",
+      "builtAt": "2026-06-18T11:08:23-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "patch",
+      "gitCommit": "67b84eff2fffe45f9c6f6c623040225d20678c41",
+      "changes": "[CHORE] chore(sdd): archivar change capa-aplicacion-commands | [*] Merge pull request #1 from alejandrop1105/feature/capa-aplicacion-commands | [REFACTOR] refactor(tenants): centralizar CRUD de tenant en capa de aplicaci├│n | [CHORE] chore(release): bump version to 1.1.1"
+    },
     {
       "version": "1.1.1",
       "builtAt": "2026-06-09T12:19:54-03:00",
