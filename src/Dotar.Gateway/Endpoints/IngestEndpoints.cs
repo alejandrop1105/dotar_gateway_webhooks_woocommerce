@@ -68,7 +68,7 @@ public static class IngestEndpoints
     private static async Task<IResult> HandleIngest(
         string slug,
         HttpRequest request,
-        TenantCacheService tenantCache,
+        ITenantCacheService tenantCache,
         HmacSignatureValidator validator,
         RedisQueueService queue,
         SystemLogService systemLog,

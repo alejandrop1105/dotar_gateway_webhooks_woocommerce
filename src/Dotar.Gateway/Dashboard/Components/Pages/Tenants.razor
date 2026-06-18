@@ -1,12 +1,12 @@
 @page "/tenants"
 @page "/tenants/create"
 @page "/tenants/{Id:int}/edit"
+@using Dotar.Gateway.Application
 @using Dotar.Gateway.Domain.Entities
 @using Dotar.Gateway.Infrastructure.Data
-@using Dotar.Gateway.Infrastructure.Services
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
 @inject IServiceScopeFactory ScopeFactory
-@inject TenantCacheService CacheService
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -24,8 +24,9 @@
             <MudTextField @bind-Value="_form.Name" Label="Nombre"
                           Placeholder="Mi Sistema Origen" Variant="Variant.Outlined" />
             <MudTextField @bind-Value="_form.Slug" Label="Slug"
-                          HelperText="Usado en la URL: /ingest/{slug}"
-                          Placeholder="mi-sistema" Variant="Variant.Outlined" />
+                          HelperText="@(_isEditing ? "El slug es inmutable y no puede modificarse" : "Usado en la URL: /ingest/{slug}")"
+                          Placeholder="mi-sistema" Variant="Variant.Outlined"
+                          Disabled="@_isEditing" />
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                 <MudTextField @bind-Value="_form.WebhookSecret" Label="Webhook Secret"
                               HelperText="@(_form.SignatureScheme == SignatureScheme.None
@@ -166,6 +167,8 @@ else
     private TenantFormModel _form = new();
     private string? _errorMessage;
     private bool _showSecret = false;
+    /// <summary>Slug del tenant en edición. Inmutable: se usa como identificador en UpdateAsync.</summary>
+    private string? _editingSlug;
 
     private bool _isCreating => Navigation.Uri.EndsWith("/create", StringComparison.OrdinalIgnoreCase);
     private bool _isEditing => Navigation.Uri.Contains("/edit", StringComparison.OrdinalIgnoreCase);
@@ -214,11 +217,15 @@ else
 
     private async Task LoadTenantForEdit(int tenantId)
     {
+        // Scope corto: el DbContext se libera al salir del método.
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-        var tenant = await db.Tenants.FindAsync(tenantId);
+
+        var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId);
         if (tenant is not null)
         {
+            // Capturar el slug inmutable antes de poblar el formulario.
+            _editingSlug = tenant.Slug;
             _form = new TenantFormModel
             {
                 Name = tenant.Name,
@@ -238,14 +245,17 @@ else
 
     private async Task LoadTenants()
     {
+        // Scope corto: el DbContext se libera al salir del método.
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+
         _tenants = await db.Tenants
+            .AsNoTracking()
             .Include(t => t.RetryPolicy)
             .Include(t => t.TenantGroup)
             .OrderBy(t => t.Name).ToListAsync();
-        _policies = await db.RetryPolicies.Include(p => p.Steps).OrderBy(p => p.Name).ToListAsync();
-        _groups = await db.TenantGroups.OrderBy(g => g.Name).ToListAsync();
+        _policies = await db.RetryPolicies.AsNoTracking().Include(p => p.Steps).OrderBy(p => p.Name).ToListAsync();
+        _groups = await db.TenantGroups.AsNoTracking().OrderBy(g => g.Name).ToListAsync();
     }
 
     private async Task SaveTenant()
@@ -259,60 +269,85 @@ else
             return;
         }
 
-        using var scope = ScopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-
-        // Si el tenant es sin firma, el secret no aplica → forzar vacío.
-        var effectiveSecret = _form.SignatureScheme == SignatureScheme.None
-            ? string.Empty
-            : _form.WebhookSecret;
-
         if (_isEditing && Id.HasValue)
         {
-            var tenant = await db.Tenants.FindAsync(Id.Value);
-            if (tenant is null) return;
-            var oldSlug = tenant.Slug;
-            tenant.Name = _form.Name;
-            tenant.Slug = _form.Slug.ToLowerInvariant().Trim();
-            tenant.WebhookSecret = effectiveSecret;
-            tenant.TargetUrl = _form.TargetUrl;
-            tenant.IsActive = _form.IsActive;
-            tenant.SignatureScheme = _form.SignatureScheme;
-            tenant.SignatureHeader = string.IsNullOrWhiteSpace(_form.SignatureHeader) ? null : _form.SignatureHeader.Trim();
-            tenant.RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId;
-            tenant.TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId;
-            tenant.UpdatedAt = DateTime.UtcNow;
-            CacheService.Invalidate(oldSlug);
-            if (oldSlug != tenant.Slug) CacheService.Invalidate(tenant.Slug);
+            // Rama editar: delega en TenantAppService.UpdateAsync.
+            // El slug es inmutable — se usa _editingSlug como identificador.
+            var slugEdicion = _editingSlug ?? _form.Slug;
+
+            // Si el tenant es sin firma, el secret no aplica → forzar vacío.
+            var effectiveSecret = _form.SignatureScheme == SignatureScheme.None
+                ? string.Empty
+                : _form.WebhookSecret;
+
+            // 0 = desasociar FK, >0 = asignar FK, null = no cambiar (UpdateTenantInput usa int? nullable)
+            var updateInput = new UpdateTenantInput(
+                Name:            _form.Name,
+                TargetUrl:       _form.TargetUrl,
+                WebhookSecret:   effectiveSecret,
+                SignatureScheme: _form.SignatureScheme,
+                SignatureHeader: _form.SignatureHeader,
+                IsActive:        _form.IsActive,
+                RetryPolicyId:   _form.RetryPolicyId,
+                TenantGroupId:   _form.TenantGroupId);
+
+            // Scope corto: el AppService (y su DbContext) se libera al salir del bloque.
+            using var scope = ScopeFactory.CreateScope();
+            var appService = scope.ServiceProvider.GetRequiredService<TenantAppService>();
+            var updateResult = await appService.UpdateAsync(slugEdicion, updateInput);
+            if (!updateResult.IsSuccess)
+            {
+                _errorMessage = updateResult.Message;
+                return;
+            }
+
+            Navigation.NavigateTo("/tenants");
+            return;
         }
         else
         {
-            var slug = _form.Slug.ToLowerInvariant().Trim();
-            if (await db.Tenants.AnyAsync(t => t.Slug == slug))
+            // Validar slug antes de delegar (cierra bug: dashboard ahora rechaza slugs inválidos)
+            var slugNormalizado = Tenant.NormalizeSlug(_form.Slug);
+            if (!Tenant.IsValidSlug(slugNormalizado))
             {
-                _errorMessage = $"El slug '{slug}' ya está en uso.";
+                _errorMessage = "El 'slug' debe ser lowercase alfanumérico con guiones, 1–100 chars, sin guión inicial o final.";
                 return;
             }
-            db.Tenants.Add(new Tenant
+
+            var input = new CreateTenantInput(
+                Name:            _form.Name,
+                Slug:            _form.Slug,
+                TargetUrl:       _form.TargetUrl,
+                WebhookSecret:   _form.WebhookSecret,
+                SignatureScheme: _form.SignatureScheme,
+                SignatureHeader: _form.SignatureHeader,
+                IsActive:        _form.IsActive,
+                RetryPolicyId:   _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
+                TenantGroupId:   _form.TenantGroupId == 0 ? null : _form.TenantGroupId);
+
+            // Scope corto: el AppService (y su DbContext) se libera al salir del bloque.
+            using var scope = ScopeFactory.CreateScope();
+            var appService = scope.ServiceProvider.GetRequiredService<TenantAppService>();
+            var createResult = await appService.CreateAsync(input);
+            if (!createResult.IsSuccess)
             {
-                Name = _form.Name, Slug = slug, WebhookSecret = effectiveSecret,
-                TargetUrl = _form.TargetUrl, IsActive = _form.IsActive,
-                SignatureScheme = _form.SignatureScheme,
-                SignatureHeader = string.IsNullOrWhiteSpace(_form.SignatureHeader) ? null : _form.SignatureHeader.Trim(),
-                RetryPolicyId = _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
-                TenantGroupId = _form.TenantGroupId == 0 ? null : _form.TenantGroupId,
-                CreatedAt = DateTime.UtcNow
-            });
+                _errorMessage = createResult.Message;
+                return;
+            }
+            Navigation.NavigateTo("/tenants");
+            return;
         }
-        await db.SaveChangesAsync();
-        Navigation.NavigateTo("/tenants");
     }
 
     private async Task DeleteTenant(Tenant tenant)
     {
-        using var scope = ScopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-        var deliveryCount = await db.DeliveryLogs.CountAsync(d => d.TenantId == tenant.Id);
+        // Contar entregas históricas para el mensaje del diálogo (UX — scope corto para la query).
+        int deliveryCount;
+        using (var scope = ScopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+            deliveryCount = await db.DeliveryLogs.AsNoTracking().CountAsync(d => d.TenantId == tenant.Id);
+        }
 
         var parameters = new DialogParameters
         {
@@ -324,18 +359,18 @@ else
             ["Color"] = Color.Error
         };
         var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar eliminación", parameters);
-        var result = await dialog.Result;
-        if (result is null || result.Canceled) return;
+        var dialogResult = await dialog.Result;
+        if (dialogResult is null || dialogResult.Canceled) return;
 
-        var slug = tenant.Slug;
-        var entity = await db.Tenants.FindAsync(tenant.Id);
-        if (entity is not null)
-        {
-            db.Tenants.Remove(entity);
-            await db.SaveChangesAsync();
-            CacheService.Invalidate(slug);
-            Snackbar.Add($"Tenant '{slug}' eliminado.", Severity.Success);
-        }
+        // Delegar en AppService (contiene la lógica de borrado + invalidación de caché).
+        using var deleteScope = ScopeFactory.CreateScope();
+        var appService = deleteScope.ServiceProvider.GetRequiredService<TenantAppService>();
+        var result = await appService.DeleteAsync(tenant.Slug);
+        if (result.IsSuccess)
+            Snackbar.Add($"Tenant '{tenant.Slug}' eliminado.", Severity.Success);
+        else
+            Snackbar.Add(result.Message ?? "Error al eliminar el tenant.", Severity.Error);
+
         await LoadTenants();
     }
 
@@ -349,14 +384,12 @@ else
 
     private async Task ToggleActive(Tenant tenant)
     {
+        // Delegar en AppService (inversión de IsActive + UpdatedAt + invalidación de caché).
         using var scope = ScopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-        var entity = await db.Tenants.FindAsync(tenant.Id);
-        if (entity is null) return;
-        entity.IsActive = !entity.IsActive;
-        entity.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        CacheService.Invalidate(entity.Slug);
+        var appService = scope.ServiceProvider.GetRequiredService<TenantAppService>();
+        var result = await appService.ToggleActiveAsync(tenant.Slug);
+        if (!result.IsSuccess)
+            Snackbar.Add(result.Message ?? "Error al cambiar el estado del tenant.", Severity.Error);
         await LoadTenants();
     }
 

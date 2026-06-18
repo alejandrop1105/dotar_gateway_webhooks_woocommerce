@@ -9,7 +9,7 @@ namespace Dotar.Gateway.Infrastructure.Services;
 /// Caché de configuración de tenants en memoria para evitar hits a SQLite
 /// en cada webhook entrante. Soporta invalidación manual desde el Dashboard.
 /// </summary>
-public class TenantCacheService
+public class TenantCacheService : ITenantCacheService
 {
     private readonly IMemoryCache _cache;
     private readonly IServiceScopeFactory _scopeFactory;

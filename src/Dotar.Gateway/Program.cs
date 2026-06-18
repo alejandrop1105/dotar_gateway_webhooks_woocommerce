@@ -57,7 +57,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<HmacSignatureValidator>();
 builder.Services.AddSingleton<ApiKeyService>();
 builder.Services.AddSingleton<RedisQueueService>();
-builder.Services.AddSingleton<TenantCacheService>();
+builder.Services.AddSingleton<ITenantCacheService, TenantCacheService>();
 builder.Services.AddSingleton<TunnelStatusService>();
 builder.Services.AddSingleton<Dotar.Gateway.Infrastructure.Tunnel.CloudflareTunnelManager>();
 builder.Services.AddSingleton<MonitorNotificationService>();
@@ -66,6 +66,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<SystemLogService>(
 builder.Services.AddSingleton<DeployHistoryService>();
 builder.Services.AddTransient<ForwardingService>();
 builder.Services.AddScoped<Dotar.Gateway.Endpoints.ApiKeyEndpointFilter>();
+builder.Services.AddScoped<Dotar.Gateway.Application.TenantAppService>();
 
 // ─── HttpClientFactory para reenvío ───────────────────
 builder.Services.AddHttpClient("GatewayForwarder", client =>
