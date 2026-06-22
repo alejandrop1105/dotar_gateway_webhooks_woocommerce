@@ -1,6 +1,15 @@
 {
-  "current": "1.1.2",
+  "current": "1.2.0",
   "history": [
+    {
+      "version": "1.2.0",
+      "builtAt": "2026-06-22T15:07:33-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "minor",
+      "gitCommit": "3f8c9fcff2976532de0c86afd5031ca1782f6acf",
+      "changes": "[FEAT] feat(ruteo): admin API de config de proveedor + contrato del boundary (PR 4/4) | [FEAT] feat(ruteo): endpoint de proveedor + worker de ruteo din├ímico (PR 3/4) | [FEAT] feat(ruteo): appservices de padr├│n/proveedor + auto-registro de cajas (PR 2/4) | [FEAT] feat(ruteo): modelo de padr├│n + abstracci├│n de proveedor (PR 1/4) | [CHORE] chore(release): bump version to 1.1.2"
+    },
     {
       "version": "1.1.2",
       "builtAt": "2026-06-18T11:08:23-03:00",
