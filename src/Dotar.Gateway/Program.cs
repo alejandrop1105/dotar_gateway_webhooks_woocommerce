@@ -110,8 +110,18 @@ builder.Services.AddKeyedSingleton<IWebhookProvider, MercadoPagoProvider>(
     });
 
 // ─── Worker Background Services ──────────────────────
-// Worker como singleton para que el Monitor pueda invocarlo para retry manual
-builder.Services.AddSingleton<WebhookDispatcherWorker>();
+// Worker como singleton para que el Monitor pueda invocarlo para retry manual.
+// IKeyedServiceProvider: el root IServiceProvider implementa esta interfaz en .NET 8+
+builder.Services.AddSingleton<WebhookDispatcherWorker>(sp =>
+    new WebhookDispatcherWorker(
+        sp.GetRequiredService<RedisQueueService>(),
+        sp.GetRequiredService<ForwardingService>(),
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<MonitorNotificationService>(),
+        sp.GetRequiredService<SystemLogService>(),
+        sp.GetRequiredService<ILogger<WebhookDispatcherWorker>>(),
+        (IKeyedServiceProvider)sp,
+        sp.GetRequiredService<ICajaRegistradaCacheService>()));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookDispatcherWorker>());
 builder.Services.AddHostedService<TunnelStartupService>();
 
@@ -159,6 +169,7 @@ app.UseRateLimiter();
 app.MapIngestEndpoints();
 app.MapTenantApiEndpoints();
 app.MapRegistroCajaEndpoints();
+app.MapWebhookProveedorEndpoints();
 
 // ─── Blazor Server ────────────────────────────────────
 app.MapRazorComponents<Dotar.Gateway.Dashboard.Components.App>()

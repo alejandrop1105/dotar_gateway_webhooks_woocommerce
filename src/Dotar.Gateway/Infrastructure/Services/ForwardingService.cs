@@ -27,18 +27,24 @@ public class ForwardingService
 
     /// <summary>
     /// Reenvía el payload JSON al destino final, propagando los headers del provider.
+    /// Virtual para permitir fakes en tests unitarios.
     /// </summary>
-    public async Task<ForwardResult> ForwardAsync(
+    /// <param name="clientName">
+    /// Nombre del HttpClient a usar. Por defecto "GatewayForwarder".
+    /// Usar "CajaCallback" para el flujo de proveedor (sin auto-redirect).
+    /// </param>
+    public virtual async Task<ForwardResult> ForwardAsync(
         string targetUrl,
         string payload,
         string tenantSlug,
-        IReadOnlyDictionary<string, string>? forwardedHeaders = null)
+        IReadOnlyDictionary<string, string>? forwardedHeaders = null,
+        string? clientName = null)
     {
         var sw = Stopwatch.StartNew();
 
         try
         {
-            var client = _clientFactory.CreateClient("GatewayForwarder");
+            var client = _clientFactory.CreateClient(clientName ?? "GatewayForwarder");
 
             // Construimos manualmente HttpRequestMessage para poder llamar TryAddWithoutValidation
             // y preservar el nombre exacto de cada header (algunos providers son sensibles a la

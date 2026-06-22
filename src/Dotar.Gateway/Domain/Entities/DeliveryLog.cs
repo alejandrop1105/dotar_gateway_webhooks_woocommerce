@@ -59,6 +59,13 @@ public class DeliveryLog
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Nombre del HttpClient usado en el primer forward (ej. "CajaCallback").
+    /// Null en el flujo 1-a-1 (usa el default "GatewayForwarder").
+    /// Persisted para que los retries (auto y manual) usen el mismo cliente.
+    /// </summary>
+    public string? ForwardClientName { get; set; }
+
     public Tenant Tenant { get; set; } = null!;
 
     /// <summary>Historial de todos los intentos de entrega.</summary>
