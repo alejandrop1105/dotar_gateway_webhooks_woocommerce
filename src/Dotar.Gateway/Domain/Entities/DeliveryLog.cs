@@ -12,7 +12,9 @@ public enum DeliveryStatus
     /// <summary>Pendiente de reintento programado.</summary>
     Scheduled,
     /// <summary>Reenvío manual exitoso.</summary>
-    ManualRetry
+    ManualRetry,
+    /// <summary>Enviado a dead-letter: no pudo enrutarse (caja no encontrada, enriquecimiento fallido, routing key inválida).</summary>
+    DeadLetter
 }
 
 /// <summary>

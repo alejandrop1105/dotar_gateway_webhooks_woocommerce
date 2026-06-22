@@ -20,4 +20,10 @@ public class QueuedWebhook
     /// (ya filtrados por HeaderForwardingPolicy). Clave = nombre exacto del header.
     /// </summary>
     public Dictionary<string, string> ForwardedHeaders { get; set; } = new();
+
+    /// <summary>
+    /// Nombre del proveedor de webhook si el tenant tiene ruteo por proveedor (ej. "mercadopago").
+    /// Null para el flujo 1-a-1 clásico vía POST /ingest/{slug}.
+    /// </summary>
+    public string? ProveedorNombre { get; set; }
 }
