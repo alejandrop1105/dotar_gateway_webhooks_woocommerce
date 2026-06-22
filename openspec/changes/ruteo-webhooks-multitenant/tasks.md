@@ -68,38 +68,38 @@ Chain strategy: pending
 ## Slice 3 — AppServices + cache + cifrado (WU-3)
 
 ### 3.1 RED: tests unitarios AppServices y cache
-- [ ] 3.1 Escribir tests `CajaRegistradaAppService_AntiSSRF_Test`: `callbackUrl` con `http://` → `Result.Validation`; dominio fuera de allowlist → `Result.Validation`; URL válida en allowlist → `Result.Success`.
-- [ ] 3.2 Escribir tests `CajaRegistradaAppService_Upsert_Test`: registro nuevo persiste; re-registro con mismo `(TenantId, Identificador)` actualiza `CallbackUrl` y `UltimaVez` sin duplicar.
-- [ ] 3.3 Escribir tests `ProveedorWebhookConfigAppService_Cifrado_Test`: cifrado round-trip con `IDataProtector` ephemeral; credenciales no aparecen en texto plano en la entidad persistida.
-- [ ] 3.4 Escribir tests `ICajaRegistradaCacheService_Test`: miss llama `GatewayDbContext`; hit retorna desde cache; `Invalidate` limpia la entrada y fuerza próximo miss.
+- [x] 3.1 Escribir tests `CajaRegistradaAppService_AntiSSRF_Test`: `callbackUrl` con `http://` → `Result.Validation`; dominio fuera de allowlist → `Result.Validation`; URL válida en allowlist → `Result.Success`.
+- [x] 3.2 Escribir tests `CajaRegistradaAppService_Upsert_Test`: registro nuevo persiste; re-registro con mismo `(TenantId, Identificador)` actualiza `CallbackUrl` y `UltimaVez` sin duplicar.
+- [x] 3.3 Escribir tests `ProveedorWebhookConfigAppService_Cifrado_Test`: cifrado round-trip con `IDataProtector` ephemeral; credenciales no aparecen en texto plano en la entidad persistida.
+- [x] 3.4 Escribir tests `ICajaRegistradaCacheService_Test`: miss llama `GatewayDbContext`; hit retorna desde cache; `Invalidate` limpia la entrada y fuerza próximo miss.
 
 ### 3.2 GREEN: AppServices y cache
-- [ ] 3.5 Crear `src/Dotar.Gateway/Application/CajaRegistradaAppService.cs`: `RegistrarAsync` con validación anti-SSRF (allowlist desde `IConfiguration`) + upsert por `(TenantId, Identificador)` + actualización `UltimaVez` + `Invalidate` del cache; retorna `Result<CajaDto>`.
-- [ ] 3.6 Crear `src/Dotar.Gateway/Application/ProveedorWebhookConfigAppService.cs`: `UpsertAsync` cifra `CredencialesCifradas` vía `IDataProtector("ProveedorWebhookConfig.Credenciales.v1")`; lookups por `(ProveedorNombre, CuentaExternaId)` y por `(TenantId, ProveedorNombre)` con descifrado en memoria; no expone valores en claro en DTOs de respuesta.
-- [ ] 3.7 Crear `src/Dotar.Gateway/Infrastructure/Services/ICajaRegistradaCacheService.cs` e impl `CajaRegistradaCacheService.cs`: Singleton, `IMemoryCache` cache-aside, abre scope vía `IServiceScopeFactory` para `GatewayDbContext` en miss; excluye cajas cuya `UltimaVez` supere el TTL configurado.
-- [ ] 3.8 Modificar `Program.cs`: registrar `CajaRegistradaAppService` y `ProveedorWebhookConfigAppService` (Scoped); registrar `ICajaRegistradaCacheService → CajaRegistradaCacheService` (Singleton); leer `Seguridad:CallbackDominiosPermitidos` y `Seguridad:CajaTtlMinutos` desde `appsettings.json`.
-- [ ] 3.9 Agregar keys de configuración a `appsettings.json`: `"Seguridad": { "CallbackDominiosPermitidos": ["*.cfargotunnel.com","*.dotarsoluciones.com"], "CajaTtlMinutos": 30 }`.
-- [ ] 3.10 Verificar tests del slice 3 verdes + regresión completa.
+- [x] 3.5 Crear `src/Dotar.Gateway/Application/CajaRegistradaAppService.cs`: `RegistrarAsync` con validación anti-SSRF (allowlist desde `IConfiguration`) + upsert por `(TenantId, Identificador)` + actualización `UltimaVez` + `Invalidate` del cache; retorna `Result<CajaDto>`.
+- [x] 3.6 Crear `src/Dotar.Gateway/Application/ProveedorWebhookConfigAppService.cs`: `UpsertAsync` cifra `CredencialesCifradas` vía `IDataProtector("ProveedorWebhookConfig.Credenciales.v1")`; lookups por `(ProveedorNombre, CuentaExternaId)` y por `(TenantId, ProveedorNombre)` con descifrado en memoria; no expone valores en claro en DTOs de respuesta.
+- [x] 3.7 Crear `src/Dotar.Gateway/Infrastructure/Services/ICajaRegistradaCacheService.cs` e impl `CajaRegistradaCacheService.cs`: Singleton, `IMemoryCache` cache-aside, abre scope vía `IServiceScopeFactory` para `GatewayDbContext` en miss; excluye cajas cuya `UltimaVez` supere el TTL configurado.
+- [x] 3.8 Modificar `Program.cs`: registrar `CajaRegistradaAppService` y `ProveedorWebhookConfigAppService` (Scoped); registrar `ICajaRegistradaCacheService → CajaRegistradaCacheService` (Singleton); leer `Seguridad:CallbackDominiosPermitidos` y `Seguridad:CajaTtlMinutos` desde `appsettings.json`.
+- [x] 3.9 Agregar keys de configuración a `appsettings.json`: `"Seguridad": { "CallbackDominiosPermitidos": ["*.cfargotunnel.com","*.dotarsoluciones.com"], "CajaTtlMinutos": 30 }`.
+- [x] 3.10 Verificar tests del slice 3 verdes + regresión completa.
 
 ---
 
 ## Slice 4 — Auto-registro `POST /registro-caja/{slug}` (WU-4)
 
 ### 4.1 RED: tests de integración del endpoint
-- [ ] 4.1 Escribir test integración `RegistroCaja_HMAC_Valido_Retorna200`: con `WebApplicationFactory`; body + HMAC válidos → 200 + caja en DB.
-- [ ] 4.2 Escribir test `RegistroCaja_HMAC_Invalido_Retorna401`.
-- [ ] 4.3 Escribir test `RegistroCaja_SinHMAC_Retorna401`.
-- [ ] 4.4 Escribir test `RegistroCaja_Idempotencia_ActualizaCallbackUrl`: mismo `identificador`, segunda URL → 200, URL actualizada, sin registro duplicado.
-- [ ] 4.5 Escribir test `RegistroCaja_IdentificadorConDobleColon_Retorna400`.
-- [ ] 4.6 Escribir test `RegistroCaja_CallbackUrlHttp_Retorna400`.
-- [ ] 4.7 Escribir test `RegistroCaja_CallbackUrlFueraDeAllowlist_Retorna400`.
-- [ ] 4.8 Escribir test `RegistroCaja_TenantNoEncontrado_Retorna404`.
-- [ ] 4.9 Escribir test `RegistroCaja_RateLimit_Retorna429`: superar límite configurado → 429.
+- [x] 4.1 Escribir test integración `RegistroCaja_HMAC_Valido_Retorna200`: con `WebApplicationFactory`; body + HMAC válidos → 200 + caja en DB.
+- [x] 4.2 Escribir test `RegistroCaja_HMAC_Invalido_Retorna401`.
+- [x] 4.3 Escribir test `RegistroCaja_SinHMAC_Retorna401`.
+- [x] 4.4 Escribir test `RegistroCaja_Idempotencia_ActualizaCallbackUrl`: mismo `identificador`, segunda URL → 200, URL actualizada, sin registro duplicado.
+- [x] 4.5 Escribir test `RegistroCaja_IdentificadorConDobleColon_Retorna400`.
+- [x] 4.6 Escribir test `RegistroCaja_CallbackUrlHttp_Retorna400`.
+- [x] 4.7 Escribir test `RegistroCaja_CallbackUrlFueraDeAllowlist_Retorna400`.
+- [x] 4.8 Escribir test `RegistroCaja_TenantNoEncontrado_Retorna404`.
+- [x] 4.9 Escribir test `RegistroCaja_RateLimit_Retorna429`: superar límite configurado → 429.
 
 ### 4.2 GREEN: endpoint de auto-registro
-- [ ] 4.10 Crear `src/Dotar.Gateway/Endpoints/RegistroCajaEndpoints.cs`: `POST /registro-caja/{slug}`; leer body crudo; verificar `X-Caja-Signature` (HMAC-SHA256 hex lowercase con `WebhookSecret` del tenant); validar campos `identificador` (no vacío, no contiene `::`) y `callbackUrl`; delegar a `CajaRegistradaAppService.RegistrarAsync`; mapear `Result<T>` a códigos HTTP (200/400/401/404/429).
-- [ ] 4.11 Modificar `Program.cs`: registrar rate limiter (fixed window 10 req/min por IP) con `AddRateLimiter`; aplicar a `RegistroCajaEndpoints`.
-- [ ] 4.12 Verificar tests del slice 4 verdes + regresión completa.
+- [x] 4.10 Crear `src/Dotar.Gateway/Endpoints/RegistroCajaEndpoints.cs`: `POST /registro-caja/{slug}`; leer body crudo; verificar `X-Caja-Signature` (HMAC-SHA256 hex lowercase con `WebhookSecret` del tenant); validar campos `identificador` (no vacío, no contiene `::`) y `callbackUrl`; delegar a `CajaRegistradaAppService.RegistrarAsync`; mapear `Result<T>` a códigos HTTP (200/400/401/404/429).
+- [x] 4.11 Modificar `Program.cs`: registrar rate limiter (fixed window 10 req/min por IP) con `AddRateLimiter`; aplicar a `RegistroCajaEndpoints`.
+- [x] 4.12 Verificar tests del slice 4 verdes + regresión completa.
 
 ---
 
@@ -113,7 +113,7 @@ Chain strategy: pending
 - [ ] 5.5 Escribir test `IngestEndpoint_NoRegresion`: `POST /ingest/{slug}` con payload WooCommerce → comportamiento idéntico a hoy (tests existentes).
 
 ### 5.2 RED: tests del worker — flujo proveedor
-- [ ] 5.6 Escribir test worker `Worker_EnriquecerYRutear_ExitoReenviaRAW`: `IWebhookProvider` mock + `ICajaRegistradaCacheService` mock con caja viva + `HttpClient` fake → forward a `CallbackUrl` con header `X-Dotar-Signature`; payload reenviado es el RAW original.
+- [ ] 5.6 Escribir test worker `Worker_EnriquecerYRutear_ExitoReenviaRAW`: `IWebhookProvider` mock + `ICajaRegistradaCacheService` mock con caja viva + `HttpClient` fake → forward a `CallbackUrl` con header `X-Caja-Signature` (HMAC-SHA256 hex lowercase); payload reenviado es el RAW original.
 - [ ] 5.7 Escribir test worker `Worker_CajaNoEncontrada_DeadLetter`: caja no en padrón → `DeliveryStatus.DeadLetter` + log `Worker`.
 - [ ] 5.8 Escribir test worker `Worker_ExternalReferenceInvalida_DeadLetter`: `RoutingKeyResult.Invalid` → dead-letter + log `Forward`.
 - [ ] 5.9 Escribir test worker `Worker_ErrorEnriquecimiento_DeadLetter`: `EnrichmentResult.IsSuccess = false` → dead-letter + log `Forward`.
