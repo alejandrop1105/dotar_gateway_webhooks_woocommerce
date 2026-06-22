@@ -170,6 +170,7 @@ app.MapIngestEndpoints();
 app.MapTenantApiEndpoints();
 app.MapRegistroCajaEndpoints();
 app.MapWebhookProveedorEndpoints();
+app.MapProveedorConfigApiEndpoints();
 
 // ─── Blazor Server ────────────────────────────────────
 app.MapRazorComponents<Dotar.Gateway.Dashboard.Components.App>()

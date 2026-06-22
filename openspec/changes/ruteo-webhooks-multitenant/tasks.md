@@ -131,13 +131,13 @@ Chain strategy: pending
 ## Slice 6 — Admin API config + contrato (WU-6)
 
 ### 6.1 RED: tests de integración admin API
-- [ ] 6.1 Escribir test `ProveedorConfig_SinAutenticacion_Retorna401`.
-- [ ] 6.2 Escribir test `ProveedorConfig_UpsertNuevo_Retorna201`: crea config con `CuentaExternaId` + credenciales cifradas.
-- [ ] 6.3 Escribir test `ProveedorConfig_UpsertExistente_Retorna200_SinDuplicado`: actualiza `CuentaExternaId` y credenciales; un único registro en DB.
-- [ ] 6.4 Escribir test `ProveedorConfig_Listar_NoExponeCredenciales`: respuesta no contiene `access_token` ni `SecretProveedor` en texto plano.
+- [x] 6.1 Escribir test `ProveedorConfig_SinAutenticacion_Retorna401`.
+- [x] 6.2 Escribir test `ProveedorConfig_UpsertNuevo_Retorna201`: crea config con `CuentaExternaId` + credenciales cifradas.
+- [x] 6.3 Escribir test `ProveedorConfig_UpsertExistente_Retorna200_SinDuplicado`: actualiza `CuentaExternaId` y credenciales; un único registro en DB.
+- [x] 6.4 Escribir test `ProveedorConfig_Listar_NoExponeCredenciales`: respuesta no contiene `access_token` ni `SecretProveedor` en texto plano.
 
 ### 6.2 GREEN: admin API + publicación de contrato
-- [ ] 6.5 Crear `src/Dotar.Gateway/Endpoints/ProveedorConfigApiEndpoints.cs`: `POST /api/proveedores/config` (upsert) y `GET /api/proveedores/config` (listar sin valores sensibles); protegido por `ApiKeyEndpointFilter` existente.
-- [ ] 6.6 Agregar sección de configuración `MercadoPago:BaseUrl` a `appsettings.json` (`"https://api.mercadopago.com"`).
-- [ ] 6.7 Publicar contrato del boundary en `openspec/specs/ruteo-webhooks-multitenant/contrato-boundary.md` (secciones A–D del design).
-- [ ] 6.8 Verificar tests del slice 6 verdes + regresión final completa: `dotnet test tests/Dotar.Gateway.Tests/Dotar.Gateway.Tests.csproj` → ≥ 184 tests verdes.
+- [x] 6.5 Crear `src/Dotar.Gateway/Endpoints/ProveedorConfigApiEndpoints.cs`: `POST /api/proveedores/config` (upsert) y `GET /api/proveedores/config` (listar sin valores sensibles); protegido por `ApiKeyEndpointFilter` existente.
+- [x] 6.6 Agregar sección de configuración `MercadoPago:BaseUrl` a `appsettings.json` (`"https://api.mercadopago.com"`).
+- [x] 6.7 Publicar contrato del boundary en `openspec/specs/ruteo-webhooks-multitenant/contrato-boundary.md` (secciones A–D del design).
+- [x] 6.8 Verificar tests del slice 6 verdes + regresión final completa: `dotnet test tests/Dotar.Gateway.Tests/Dotar.Gateway.Tests.csproj` → ≥ 184 tests verdes.
