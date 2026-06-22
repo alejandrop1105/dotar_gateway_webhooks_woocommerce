@@ -17,6 +17,30 @@ public sealed record CredencialesProveedorDto(
     bool IsActive);
 
 /// <summary>
+/// DTO extendido que incluye TenantId y credenciales descifradas.
+/// Usado por el endpoint de proveedor para resolver tenant + validar firma en una sola consulta.
+/// Solo vive en memoria; nunca se serializa.
+/// </summary>
+public sealed record ProveedorConfigCompletoDto(
+    int TenantId,
+    string ProveedorNombre,
+    string CuentaExternaId,
+    string AccessToken,
+    string SigningSecret,
+    string BaseUrl,
+    bool IsActive)
+{
+    /// <summary>
+    /// Redacta credenciales sensibles para que nunca aparezcan en logs estructurados
+    /// si este DTO llega accidentalmente a un ToString() (ej. interpolación, Exception.Data).
+    /// </summary>
+    public override string ToString()
+        => $"ProveedorConfigCompletoDto {{ TenantId={TenantId}, ProveedorNombre={ProveedorNombre}, " +
+           $"CuentaExternaId={CuentaExternaId}, AccessToken=***, SigningSecret=***, " +
+           $"BaseUrl={BaseUrl}, IsActive={IsActive} }}";
+}
+
+/// <summary>
 /// Estructura JSON interna que se cifra en CredencialesCifradas.
 /// Los nombres de propiedad son snake_case para compatibilidad con el JSON
 /// que envía el proveedor (ej. "access_token", "signing_secret").
@@ -158,6 +182,34 @@ public sealed class ProveedorWebhookConfigAppService
                 p.ProveedorNombre == proveedorNombre);
 
         return config is null ? null : Descifrar(config);
+    }
+
+    /// <summary>
+    /// Busca la config por (ProveedorNombre, CuentaExternaId) y devuelve TenantId + credenciales descifradas.
+    /// Lookup inverso usado por el endpoint de proveedor en una sola consulta DB.
+    /// </summary>
+    public async Task<ProveedorConfigCompletoDto?> GetCompletoByProveedorYCuentaAsync(
+        string proveedorNombre,
+        string cuentaExternaId)
+    {
+        var config = await _db.ProveedoresWebhookConfig
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p =>
+                p.ProveedorNombre == proveedorNombre &&
+                p.CuentaExternaId == cuentaExternaId &&
+                p.IsActive);
+
+        if (config is null) return null;
+
+        var creds = Descifrar(config);
+        return new ProveedorConfigCompletoDto(
+            config.TenantId,
+            config.ProveedorNombre,
+            config.CuentaExternaId,
+            creds.AccessToken,
+            creds.SigningSecret,
+            config.BaseUrl,
+            config.IsActive);
     }
 
     // ─── Helpers privados ─────────────────────────────────────────────────────

@@ -115,4 +115,61 @@ public class ProveedorWebhookConfigAppService_Cifrado_Test : IDisposable
             .CountAsync(p => p.TenantId == _tenant.Id && p.ProveedorNombre == "mercadopago");
         Assert.Equal(1, count);
     }
+
+    /// <summary>
+    /// CRITICAL 3: GetCompletoByProveedorYCuentaAsync retorna null cuando IsActive=false.
+    /// </summary>
+    [Fact]
+    public async Task GetCompleto_ConfigInactiva_RetornaNull()
+    {
+        await _service.UpsertAsync(_tenant.Id, "mercadopago", "cuenta-inactiva",
+            """{"access_token":"tok","signing_secret":"sec"}""",
+            "https://api.mercadopago.com",
+            isActive: false);
+
+        var result = await _service.GetCompletoByProveedorYCuentaAsync("mercadopago", "cuenta-inactiva");
+
+        Assert.Null(result);
+    }
+
+    /// <summary>
+    /// CRITICAL 3: GetCompletoByProveedorYCuentaAsync retorna el DTO cuando IsActive=true.
+    /// </summary>
+    [Fact]
+    public async Task GetCompleto_ConfigActiva_RetornaDto()
+    {
+        await _service.UpsertAsync(_tenant.Id, "mercadopago", "cuenta-activa",
+            """{"access_token":"tok","signing_secret":"sec"}""",
+            "https://api.mercadopago.com",
+            isActive: true);
+
+        var result = await _service.GetCompletoByProveedorYCuentaAsync("mercadopago", "cuenta-activa");
+
+        Assert.NotNull(result);
+        Assert.Equal(_tenant.Id, result!.TenantId);
+        Assert.True(result.IsActive);
+    }
+
+    /// <summary>
+    /// MENOR — ToString() de ProveedorConfigCompletoDto redacta credenciales sensibles.
+    /// </summary>
+    [Fact]
+    public void ProveedorConfigCompletoDto_ToString_RedactaCredenciales()
+    {
+        var dto = new Dotar.Gateway.Application.ProveedorConfigCompletoDto(
+            TenantId: 1,
+            ProveedorNombre: "mercadopago",
+            CuentaExternaId: "123",
+            AccessToken: "mi-token-secreto",
+            SigningSecret: "mi-firma-secreta",
+            BaseUrl: "https://api.mercadopago.com",
+            IsActive: true);
+
+        var str = dto.ToString();
+
+        Assert.DoesNotContain("mi-token-secreto", str);
+        Assert.DoesNotContain("mi-firma-secreta", str);
+        Assert.Contains("***", str);
+        Assert.Contains("mercadopago", str);
+    }
 }

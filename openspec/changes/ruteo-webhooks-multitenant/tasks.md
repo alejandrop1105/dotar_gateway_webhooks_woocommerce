@@ -106,25 +106,25 @@ Chain strategy: pending
 ## Slice 5 — Endpoint de proveedor + worker (WU-5)
 
 ### 5.1 RED: tests de integración del endpoint proveedor
-- [ ] 5.1 Escribir test `WebhookProveedor_ProveedorInexistente_Retorna404`: ruta `/webhook/stripe` sin keyed DI → 404.
-- [ ] 5.2 Escribir test `WebhookProveedor_CuentaExternaDesconocida_Retorna404`: `user_id` sin `ProveedorWebhookConfig` → 404 + log `Ingest`.
-- [ ] 5.3 Escribir test `WebhookProveedor_FirmaInvalida_Retorna401`: config resuelta pero `x-signature` inválida → 401 + log `Ingest`.
-- [ ] 5.4 Escribir test `WebhookProveedor_FirmaValida_Retorna202`: payload MP válido → 202 + `QueuedWebhook` con `TenantId` + `ProveedorNombre = "mercadopago"` en Redis.
-- [ ] 5.5 Escribir test `IngestEndpoint_NoRegresion`: `POST /ingest/{slug}` con payload WooCommerce → comportamiento idéntico a hoy (tests existentes).
+- [x] 5.1 Escribir test `WebhookProveedor_ProveedorInexistente_Retorna404`: ruta `/webhook/stripe` sin keyed DI → 404.
+- [x] 5.2 Escribir test `WebhookProveedor_CuentaExternaDesconocida_Retorna404`: `user_id` sin `ProveedorWebhookConfig` → 404 + log `Ingest`.
+- [x] 5.3 Escribir test `WebhookProveedor_FirmaInvalida_Retorna401`: config resuelta pero `x-signature` inválida → 401 + log `Ingest`.
+- [x] 5.4 Escribir test `WebhookProveedor_FirmaValida_Retorna202`: payload MP válido → 202 + `QueuedWebhook` con `TenantId` + `ProveedorNombre = "mercadopago"` en Redis.
+- [x] 5.5 Escribir test `IngestEndpoint_NoRegresion`: `POST /ingest/{slug}` con payload WooCommerce → comportamiento idéntico a hoy (tests existentes).
 
 ### 5.2 RED: tests del worker — flujo proveedor
-- [ ] 5.6 Escribir test worker `Worker_EnriquecerYRutear_ExitoReenviaRAW`: `IWebhookProvider` mock + `ICajaRegistradaCacheService` mock con caja viva + `HttpClient` fake → forward a `CallbackUrl` con header `X-Caja-Signature` (HMAC-SHA256 hex lowercase); payload reenviado es el RAW original.
-- [ ] 5.7 Escribir test worker `Worker_CajaNoEncontrada_DeadLetter`: caja no en padrón → `DeliveryStatus.DeadLetter` + log `Worker`.
-- [ ] 5.8 Escribir test worker `Worker_ExternalReferenceInvalida_DeadLetter`: `RoutingKeyResult.Invalid` → dead-letter + log `Forward`.
-- [ ] 5.9 Escribir test worker `Worker_ErrorEnriquecimiento_DeadLetter`: `EnrichmentResult.IsSuccess = false` → dead-letter + log `Forward`.
-- [ ] 5.10 Escribir test worker `Worker_SinProveedorNombre_Flujo1a1`: `ProveedorNombre = null` → `ForwardAsync(TargetUrl)` sin llamar al provider (no regresión).
-- [ ] 5.11 Escribir test worker `Worker_DeadLetterNoBloqueaProcesamiento`: mensaje `A` dead-letter, mensaje `B` procesado correctamente en la misma ejecución del worker.
+- [x] 5.6 Escribir test worker `Worker_EnriquecerYRutear_ExitoReenviaRAW`: `IWebhookProvider` mock + `ICajaRegistradaCacheService` mock con caja viva + `HttpClient` fake → forward a `CallbackUrl` con header `X-Caja-Signature` (HMAC-SHA256 hex lowercase); payload reenviado es el RAW original.
+- [x] 5.7 Escribir test worker `Worker_CajaNoEncontrada_DeadLetter`: caja no en padrón → `DeliveryStatus.DeadLetter` + log `Worker`.
+- [x] 5.8 Escribir test worker `Worker_ExternalReferenceInvalida_DeadLetter`: `RoutingKeyResult.Invalid` → dead-letter + log `Forward`.
+- [x] 5.9 Escribir test worker `Worker_ErrorEnriquecimiento_DeadLetter`: `EnrichmentResult.IsSuccess = false` → dead-letter + log `Forward`.
+- [x] 5.10 Escribir test worker `Worker_SinProveedorNombre_Flujo1a1`: `ProveedorNombre = null` → `ForwardAsync(TargetUrl)` sin llamar al provider (no regresión).
+- [x] 5.11 Escribir test worker `Worker_DeadLetterNoBloqueaProcesamiento`: mensaje `A` dead-letter, mensaje `B` procesado correctamente en la misma ejecución del worker.
 
 ### 5.3 GREEN: endpoint + modificación worker
-- [ ] 5.12 Crear `src/Dotar.Gateway/Endpoints/WebhookProveedorEndpoints.cs`: `POST /webhook/{proveedor}`; leer body crudo; resolver `IWebhookProvider` por keyed DI (`proveedor` de ruta) → 404 si no existe; llamar `ResolverCuentaExterna` → 404 si null; lookup `ProveedorWebhookConfigAppService` por `(ProveedorNombre, CuentaExternaId)` → 404 si sin match; `ValidarFirmaEntrante` → 401 + log `Auth` si falla; `EnqueueAsync(QueuedWebhook { TenantId, ProveedorNombre, RawPayload })` → 202.
-- [ ] 5.13 Modificar `src/Dotar.Gateway/Workers/WebhookDispatcherWorker.cs`: en `ProcessNewWebhookAsync`, bifurcar por `webhook.ProveedorNombre`: si null → flujo existente (`ForwardAsync(TargetUrl)`); si no null → resolver `IWebhookProvider` → `EnriquecerAsync` → `ExtraerRoutingKey` → `ICajaRegistradaCacheService.GetByIdentificadorAsync` → si caja encontrada `ForwardAsync(caja.CallbackUrl, rawPayload, "CajaCallback")` → si no encontrada dead-letter. Cambiar `ConcurrentDictionary` de CB de keyed por `TenantId` a keyed por `callbackUrl` (string) con cap 500 + TTL deslizante 30 min.
-- [ ] 5.14 Verificar que `IngestEndpoints.cs` NO fue modificado (diff vacío para ese archivo).
-- [ ] 5.15 Verificar tests del slice 5 verdes + regresión completa: `dotnet test tests/Dotar.Gateway.Tests/Dotar.Gateway.Tests.csproj`.
+- [x] 5.12 Crear `src/Dotar.Gateway/Endpoints/WebhookProveedorEndpoints.cs`: `POST /webhook/{proveedor}`; leer body crudo; resolver `IWebhookProvider` por keyed DI (`proveedor` de ruta) → 404 si no existe; llamar `ResolverCuentaExterna` → 404 si null; lookup `ProveedorWebhookConfigAppService` por `(ProveedorNombre, CuentaExternaId)` → 404 si sin match; `ValidarFirmaEntrante` → 401 + log `Auth` si falla; `EnqueueAsync(QueuedWebhook { TenantId, ProveedorNombre, RawPayload })` → 202.
+- [x] 5.13 Modificar `src/Dotar.Gateway/Workers/WebhookDispatcherWorker.cs`: en `ProcessNewWebhookAsync`, bifurcar por `webhook.ProveedorNombre`: si null → flujo existente (`ForwardAsync(TargetUrl)`); si no null → resolver `IWebhookProvider` → `EnriquecerAsync` → `ExtraerRoutingKey` → `ICajaRegistradaCacheService.GetByIdentificadorAsync` → si caja encontrada `ForwardAsync(caja.CallbackUrl, rawPayload, "CajaCallback")` → si no encontrada dead-letter. Cambiar CB de keyed por `TenantId` a keyed por `callbackUrl` (string) con cap 500 + TTL deslizante 30 min (IMemoryCache).
+- [x] 5.14 Verificar que `IngestEndpoints.cs` NO fue modificado (diff vacío para ese archivo).
+- [x] 5.15 Verificar tests del slice 5 verdes + regresión completa: 250/250 passed.
 
 ---
 
