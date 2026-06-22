@@ -2,6 +2,7 @@ using Dotar.Gateway.Endpoints;
 using Dotar.Gateway.Infrastructure.Data;
 using Microsoft.AspNetCore.DataProtection;
 using Dotar.Gateway.Infrastructure.Services;
+using Dotar.Gateway.Providers;
 using Dotar.Gateway.Workers;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
@@ -74,6 +75,34 @@ builder.Services.AddHttpClient("GatewayForwarder", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.Add("User-Agent", "DotarGateway/1.0");
 });
+
+// ─── HttpClients dedicados para proveedores ───────────
+// Enriquecimiento: timeout corto (10s) — API del proveedor debe ser rápida
+builder.Services.AddHttpClient("ProviderEnrichment", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.Add("User-Agent", "DotarGateway/1.0");
+});
+
+// Callback a cajas: sin auto-redirect (seguridad anti-SSRF; la redirección debe ser explícita)
+builder.Services.AddHttpClient("CajaCallback", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false
+});
+
+// ─── Keyed DI — Providers de webhook ────────────────
+builder.Services.AddKeyedSingleton<IWebhookProvider, MercadoPagoProvider>(
+    "mercadopago",
+    (sp, _) =>
+    {
+        var factory = sp.GetRequiredService<IHttpClientFactory>();
+        var client = factory.CreateClient("ProviderEnrichment");
+        var logger = sp.GetRequiredService<ILogger<MercadoPagoProvider>>();
+        return new MercadoPagoProvider(client, logger);
+    });
 
 // ─── Worker Background Services ──────────────────────
 // Worker como singleton para que el Monitor pueda invocarlo para retry manual

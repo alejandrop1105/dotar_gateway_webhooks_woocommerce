@@ -16,6 +16,8 @@ public class GatewayDbContext : DbContext
     public DbSet<RetryStep> RetrySteps => Set<RetryStep>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<SystemLog> SystemLogs => Set<SystemLog>();
+    public DbSet<CajaRegistrada> CajasRegistradas => Set<CajaRegistrada>();
+    public DbSet<ProveedorWebhookConfig> ProveedoresWebhookConfig => Set<ProveedorWebhookConfig>();
 
     public GatewayDbContext(DbContextOptions<GatewayDbContext> options)
         : base(options) { }
@@ -152,6 +154,38 @@ public class GatewayDbContext : DbContext
             e.Property(l => l.ResponseBody).HasColumnType("TEXT");
             e.Property(l => l.Details).HasColumnType("TEXT");
             e.Property(l => l.Exception).HasColumnType("TEXT");
+        });
+
+        // ─── CajaRegistrada ───
+        modelBuilder.Entity<CajaRegistrada>(e =>
+        {
+            e.HasKey(c => c.Id);
+            // Índice único compuesto (TenantId, Identificador) — hot path O(1)
+            e.HasIndex(c => new { c.TenantId, c.Identificador }).IsUnique();
+            e.Property(c => c.Identificador).IsRequired().HasMaxLength(100);
+            e.Property(c => c.CallbackUrl).IsRequired().HasMaxLength(2000);
+            e.HasOne(c => c.Tenant)
+                .WithMany()
+                .HasForeignKey(c => c.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ─── ProveedorWebhookConfig ───
+        modelBuilder.Entity<ProveedorWebhookConfig>(e =>
+        {
+            e.HasKey(p => p.Id);
+            // Índice único (TenantId, ProveedorNombre) — un proveedor por tenant
+            e.HasIndex(p => new { p.TenantId, p.ProveedorNombre }).IsUnique();
+            // Índice único global (ProveedorNombre, CuentaExternaId) — lookup inverso sin slug
+            e.HasIndex(p => new { p.ProveedorNombre, p.CuentaExternaId }).IsUnique();
+            e.Property(p => p.ProveedorNombre).IsRequired().HasMaxLength(100);
+            e.Property(p => p.CuentaExternaId).IsRequired().HasMaxLength(100);
+            e.Property(p => p.CredencialesCifradas).IsRequired().HasColumnType("TEXT");
+            e.Property(p => p.BaseUrl).IsRequired().HasMaxLength(2000);
+            e.HasOne(p => p.Tenant)
+                .WithMany()
+                .HasForeignKey(p => p.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
