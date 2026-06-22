@@ -218,22 +218,22 @@ DI lifetimes: `IWebhookProvider` impls = **Singleton** (keyed, stateless, usan `
   { "identificador": "<string OPACO de caja>", "callbackUrl": "https://<tunel>.cfargotunnel.com/webhook" }
   ```
 - **`identificador`**: string OPACA que el ERP genera libremente. El gateway la persiste y compara EXACTO; **no la sub-parsea**. Puede contener guiones; **única restricción: no puede contener `::`**.
-- **Header de firma**: `X-WC-Webhook-Signature` (reusa esquema WooCommerce del tenant).
-- **Algoritmo**: `base64(HMAC-SHA256(body, Tenant.WebhookSecret))` — convención base64 del proyecto. Se firma el **body crudo** (sin timestamp en v1).
+- **Header de firma**: `X-Caja-Signature` (header propio del contrato de caja; NO reusa el header de WooCommerce).
+- **Algoritmo**: `HMAC-SHA256(body, Tenant.WebhookSecret)` codificado en **hex lowercase**. Se firma el **body crudo** (sin timestamp en v1). Verificación timing-safe.
 - **Idempotencia**: upsert por `(TenantId, Identificador)`; re-registro actualiza `CallbackUrl` y `UltimaVez`. Respuesta `200 OK`.
 - **Anti-SSRF**: `callbackUrl` debe ser `https://` y matchear la allowlist; si no → `400`.
 
 ### B. Payload reenviado a la caja
 - **Forma**: RAW de MercadoPago verbatim (`{ "type": "...", "data": { "id": "..." } }` / `topic+id`). El enriquecido NO se propaga (minimiza PII).
 - **Headers**: los seleccionados por `HeaderForwardingPolicy` (X-* del provider) + `X-Dotar-Gateway-ID: {slug}`.
-- **Firma del gateway**: header `X-Dotar-Signature`, valor `base64(HMAC-SHA256(body, Tenant.WebhookSecret))` — mismo secret del tenant para ambas direcciones (Aclaración 1). La caja valida con su copia del secret.
+- **Firma del gateway**: header `X-Caja-Signature`, valor `HMAC-SHA256(body, Tenant.WebhookSecret)` en **hex lowercase** — mismo header, algoritmo y secret del tenant para ambas direcciones (registro y reenvío). La caja valida con su copia del secret.
 
 ### C. Formato del identificador
 - **Estructura**: OPACA para el gateway. Es una string no vacía que **no contiene `::`**. Regex de validación: `^(?!.*::).+$`. El gateway NO interpreta su contenido (puede tener guiones); compara EXACTO contra `CajaRegistrada.Identificador`.
 - **Extracción desde `external_reference`**: `external_reference = "{identificadorCaja}::{comprobante}"`. La routing key se obtiene con `external_reference.Split("::", 2)` → parte `[0]` = `identificadorCaja` (todo lo anterior al primer `::`). Si no hay `::` o la parte izquierda es vacía → `RoutingKeyResult.Invalid` → dead-letter. El `comprobante` es libre.
 
 ### D. Para el consumidor (ERP "DEAM Gestión")
-El ERP debe: (1) auto-registrar cada caja al arrancar con su `identificador` OPACO (sección A — sin `::`); (2) generar órdenes MP con `external_reference = {identificadorCaja}::{comprobante}`, usando exactamente el mismo `identificador` que registró; (3) exponer un endpoint de callback que valide `X-Dotar-Signature` (sección B); (4) re-registrar al cambiar el túnel.
+El ERP debe: (1) auto-registrar cada caja al arrancar con su `identificador` OPACO (sección A — sin `::`); (2) generar órdenes MP con `external_reference = {identificadorCaja}::{comprobante}`, usando exactamente el mismo `identificador` que registró; (3) exponer un endpoint de callback que valide `X-Caja-Signature` (HMAC-SHA256 hex lowercase, sección B); (4) re-registrar al cambiar el túnel.
 
 ## Testing Strategy
 

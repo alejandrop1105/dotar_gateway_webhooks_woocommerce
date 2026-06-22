@@ -1,12 +1,14 @@
 using Dotar.Gateway.Endpoints;
 using Dotar.Gateway.Infrastructure.Data;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.RateLimiting;
 using Dotar.Gateway.Infrastructure.Services;
 using Dotar.Gateway.Providers;
 using Dotar.Gateway.Workers;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using StackExchange.Redis;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +70,9 @@ builder.Services.AddSingleton<DeployHistoryService>();
 builder.Services.AddTransient<ForwardingService>();
 builder.Services.AddScoped<Dotar.Gateway.Endpoints.ApiKeyEndpointFilter>();
 builder.Services.AddScoped<Dotar.Gateway.Application.TenantAppService>();
+builder.Services.AddScoped<Dotar.Gateway.Application.CajaRegistradaAppService>();
+builder.Services.AddScoped<Dotar.Gateway.Application.ProveedorWebhookConfigAppService>();
+builder.Services.AddSingleton<ICajaRegistradaCacheService, CajaRegistradaCacheService>();
 
 // ─── HttpClientFactory para reenvío ───────────────────
 builder.Services.AddHttpClient("GatewayForwarder", client =>
@@ -110,6 +115,21 @@ builder.Services.AddSingleton<WebhookDispatcherWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookDispatcherWorker>());
 builder.Services.AddHostedService<TunnelStartupService>();
 
+// ─── Rate Limiting: registro de cajas — fixed window 10 req/min por IP ──────
+builder.Services.AddRateLimiter(rl =>
+{
+    rl.AddFixedWindowLimiter(
+        RegistroCajaEndpoints.RateLimiterPolicy,
+        opts =>
+        {
+            opts.Window             = TimeSpan.FromMinutes(1);
+            opts.PermitLimit        = 10;
+            opts.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+            opts.QueueLimit         = 0;
+        });
+    rl.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+
 // ─── Blazor Server (Interactive) + MudBlazor ─────
 builder.Services.AddMudServices();
 builder.Services.AddRazorComponents()
@@ -133,10 +153,12 @@ await app.Services.GetRequiredService<ApiKeyService>().EnsureInitializedAsync();
 // ─── Middleware Pipeline ──────────────────────────────
 app.UseStaticFiles();
 app.UseAntiforgery();
+app.UseRateLimiter();
 
 // ─── Minimal API Endpoints ────────────────────────────
 app.MapIngestEndpoints();
 app.MapTenantApiEndpoints();
+app.MapRegistroCajaEndpoints();
 
 // ─── Blazor Server ────────────────────────────────────
 app.MapRazorComponents<Dotar.Gateway.Dashboard.Components.App>()
