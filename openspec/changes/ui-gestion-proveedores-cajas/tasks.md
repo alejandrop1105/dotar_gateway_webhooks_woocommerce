@@ -178,7 +178,7 @@ Tests T-07 en **VERDE** al finalizar.
 
 **Modo TDD:** sin test automatizado (no hay bUnit; smoke manual en el dashboard).
 
-### T-09 — NavMenu.razor: agregar grupo de navegación
+### T-09 — [x] NavMenu.razor: agregar grupo de navegación
 
 Archivo: `src/Dotar.Gateway/Dashboard/Components/Layout/NavMenu.razor`.
 
@@ -199,7 +199,7 @@ Archivo: `src/Dotar.Gateway/Dashboard/Components/Layout/NavMenu.razor`.
 
 **Modo TDD:** sin test automatizado; smoke manual.
 
-### T-10 — Tenants.razor: MudIconButton → /proveedores?tenant={Slug}
+### T-10 — [x] Tenants.razor: MudIconButton → /proveedores?tenant={Slug}
 
 Archivo: `src/Dotar.Gateway/Dashboard/Components/Pages/Tenants.razor`.
 
@@ -219,7 +219,7 @@ Archivo: `src/Dotar.Gateway/Dashboard/Components/Pages/Tenants.razor`.
 
 **Modo TDD:** sin test automatizado; smoke manual.
 
-### T-11 — CambiarCredencialesDialog.razor (componente nuevo)
+### T-11 — [x] CambiarCredencialesDialog.razor (componente nuevo)
 
 Archivo nuevo: `src/Dotar.Gateway/Dashboard/Components/Shared/CambiarCredencialesDialog.razor`.
 
@@ -246,7 +246,7 @@ Implementar:
 
 **Modo TDD:** sin test automatizado; smoke manual.
 
-### T-12 — Proveedores.razor (componente nuevo)
+### T-12 — [x] Proveedores.razor (componente nuevo)
 
 Archivo nuevo: `src/Dotar.Gateway/Dashboard/Components/Pages/Proveedores.razor`.
 
@@ -294,7 +294,7 @@ Implementar en orden lógico dentro del componente:
 
 **Modo TDD:** sin test automatizado; smoke manual.
 
-### T-13 — Cajas.razor (componente nuevo)
+### T-13 — [x] Cajas.razor (componente nuevo)
 
 Archivo nuevo: `src/Dotar.Gateway/Dashboard/Components/Pages/Cajas.razor`.
 
@@ -334,7 +334,7 @@ Routing: `@page "/cajas"`.
 
 **Modo TDD:** N/A (ejecución de suite existente).
 
-### T-14 — Regresión completa
+### T-14 — [x] Regresión completa
 
 - Ejecutar `dotnet test` con la suite completa.
 - Verificar que NINGÚN test existente (ingesta 1-a-1, `IngestEndpoints`, Admin API, `RegistrarAsync`) falla.

@@ -1,0 +1,195 @@
+@page "/cajas"
+@using Dotar.Gateway.Application
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory ScopeFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IConfiguration Configuration
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.PointOfSale" Class="mr-2" />
+    Padrón de Cajas
+</MudText>
+
+<MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudSelect T="int" Value="_filtroTenantId" ValueChanged="CambiarFiltro"
+               Label="Filtrar por tenant" Variant="Variant.Outlined"
+               Style="min-width: 220px;">
+        <MudSelectItem T="int" Value="0">— Todos los tenants —</MudSelectItem>
+        @foreach (var t in _tenants)
+        {
+            <MudSelectItem T="int" Value="@t.Id">@t.Name (@t.Slug)</MudSelectItem>
+        }
+    </MudSelect>
+</MudStack>
+
+<MudTable T="CajaDto"
+          ServerData="CargarCajas"
+          @ref="_table"
+          Hover="true"
+          Dense="true"
+          Elevation="2">
+    <HeaderContent>
+        <MudTh>Identificador</MudTh>
+        <MudTh>Callback URL</MudTh>
+        <MudTh>Última vez</MudTh>
+        <MudTh>Creado</MudTh>
+        @if (_filtroTenantId == 0)
+        {
+            <MudTh>Tenant ID</MudTh>
+        }
+        <MudTh style="min-width: 80px;">Acciones</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Identificador"><code>@context.Identificador</code></MudTd>
+        <MudTd DataLabel="Callback URL" Style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            @context.CallbackUrl
+        </MudTd>
+        <MudTd DataLabel="Última vez">
+            @if (context.UltimaVez.HasValue)
+            {
+                <span title="@context.UltimaVez.Value.ToString("u")">
+                    @context.UltimaVez.Value.ToString("dd/MM/yy HH:mm")
+                </span>
+                @if (EsReciente(context.UltimaVez))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">Activa</MudChip>
+                }
+            }
+            else
+            {
+                <span>—</span>
+            }
+        </MudTd>
+        <MudTd DataLabel="Creado">@context.CreatedAt.ToString("dd/MM/yy HH:mm")</MudTd>
+        @if (_filtroTenantId == 0)
+        {
+            <MudTd DataLabel="Tenant ID">@context.TenantId</MudTd>
+        }
+        <MudTd DataLabel="Acciones">
+            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                           Size="Size.Small"
+                           Color="Color.Error"
+                           Title="Revocar caja"
+                           OnClick="@(() => Revocar(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="ma-4">
+            No hay cajas registradas
+            @if (_filtroTenantId != 0)
+            {
+                <span> para el tenant seleccionado</span>
+            }
+            .
+        </MudAlert>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Cargando cajas...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<CajaDto>? _table;
+    private List<Tenant> _tenants = [];
+    private int _filtroTenantId;
+    private int _cajaTtlMinutos;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Leer TTL de configuración (default 30 si no está configurado).
+        _cajaTtlMinutos = int.TryParse(Configuration["Seguridad:CajaTtlMinutos"], out var ttl) ? ttl : 30;
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        _tenants = await db.Tenants.AsNoTracking().OrderBy(t => t.Name).ToListAsync();
+    }
+
+    /// <summary>
+    /// Proveedor de datos server-side para MudTable.
+    /// Carga cajas del AppService con paginación (skip/take).
+    /// </summary>
+    private async Task<TableData<CajaDto>> CargarCajas(TableState state, CancellationToken token)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var appService = scope.ServiceProvider.GetRequiredService<CajaRegistradaAppService>();
+
+        // ListarPorTenantAsync devuelve lista completa; paginar en memoria.
+        var tenantFiltro = _filtroTenantId == 0 ? (int?)null : _filtroTenantId;
+        var todas = await appService.ListarPorTenantAsync(tenantFiltro);
+
+        // Ordenar por UltimaVez descendente (cajas activas primero).
+        var ordenadas = todas
+            .OrderByDescending(c => c.UltimaVez ?? DateTime.MinValue)
+            .ToList();
+
+        var total = ordenadas.Count;
+        var pagina = ordenadas
+            .Skip(state.Page * state.PageSize)
+            .Take(state.PageSize)
+            .ToList();
+
+        return new TableData<CajaDto> { Items = pagina, TotalItems = total };
+    }
+
+    private async Task CambiarFiltro(int tenantId)
+    {
+        _filtroTenantId = tenantId;
+        if (_table is not null)
+            await _table.ReloadServerData();
+    }
+
+    /// <summary>
+    /// Determina si la caja tuvo actividad dentro de la ventana de TTL configurada.
+    /// Si es así, el ConfirmDialog muestra advertencia de posible re-registro automático.
+    /// </summary>
+    private bool EsReciente(DateTime? ultimaVez)
+    {
+        if (!ultimaVez.HasValue) return false;
+        return ultimaVez.Value >= DateTime.UtcNow - TimeSpan.FromMinutes(_cajaTtlMinutos);
+    }
+
+    private async Task Revocar(CajaDto caja)
+    {
+        string contentText;
+        if (EsReciente(caja.UltimaVez))
+        {
+            contentText = $"¿Revocar la caja '{caja.Identificador}'? " +
+                          "Esta caja tuvo actividad reciente (dentro de la ventana de TTL configurada) " +
+                          "y podría volver a registrarse automáticamente en el próximo ciclo del ERP.";
+        }
+        else
+        {
+            contentText = $"¿Revocar la caja '{caja.Identificador}'? Esta acción elimina el registro del padrón.";
+        }
+
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = contentText,
+            ["ButtonText"]  = "Revocar",
+            ["Color"]       = Color.Error
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar revocación", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        using var scope = ScopeFactory.CreateScope();
+        var appService = scope.ServiceProvider.GetRequiredService<CajaRegistradaAppService>();
+        var revocarResult = await appService.RevocarAsync(caja.Id);
+
+        if (revocarResult.IsSuccess)
+            Snackbar.Add($"Caja '{caja.Identificador}' revocada del padrón.", Severity.Success);
+        else
+            Snackbar.Add(revocarResult.Message ?? "Error al revocar la caja.", Severity.Error);
+
+        if (_table is not null)
+            await _table.ReloadServerData();
+    }
+}

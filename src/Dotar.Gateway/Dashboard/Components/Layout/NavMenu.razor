@@ -30,6 +30,19 @@
 
     <MudDivider Class="my-2" />
 
+    <MudNavGroup Title="Ruteo Multitenant" Icon="@Icons.Material.Filled.AccountTree" Expanded="true">
+        <MudNavLink Href="/proveedores" Match="NavLinkMatch.Prefix"
+                    Icon="@Icons.Material.Filled.Webhook">
+            Proveedores
+        </MudNavLink>
+        <MudNavLink Href="/cajas" Match="NavLinkMatch.Prefix"
+                    Icon="@Icons.Material.Filled.PointOfSale">
+            Cajas
+        </MudNavLink>
+    </MudNavGroup>
+
+    <MudDivider Class="my-2" />
+
     <MudNavLink Href="/configuracion" Match="NavLinkMatch.All"
                 Icon="@Icons.Material.Filled.Settings">
         Configuración

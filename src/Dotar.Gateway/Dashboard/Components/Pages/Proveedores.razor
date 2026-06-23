@@ -1,0 +1,511 @@
+@page "/proveedores"
+@page "/proveedores/create"
+@page "/proveedores/{Id:long}/edit"
+@using Dotar.Gateway.Application
+@using Dotar.Gateway.Domain.Entities
+@using Dotar.Gateway.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
+@using System.Text.Json
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Webhook" Class="mr-2" />
+    @(_isEditing ? "Editar Proveedor" : _isCreating ? "Nueva Configuración de Proveedor" : "Proveedores")
+</MudText>
+
+@if (_isCreating || _isEditing)
+{
+    <MudPaper Class="pa-6" MaxWidth="640px" Elevation="2">
+        <MudStack Spacing="3">
+            @* Selector de tenant — solo en alta *@
+            @if (_isCreating)
+            {
+                <MudSelect T="int" @bind-Value="_form.TenantId" Label="Tenant" Variant="Variant.Outlined"
+                           HelperText="Tenant al que pertenece esta configuración de proveedor">
+                    <MudSelectItem T="int" Value="0">— Seleccioná un tenant —</MudSelectItem>
+                    @foreach (var t in _tenants)
+                    {
+                        <MudSelectItem T="int" Value="@t.Id">@t.Name (@t.Slug)</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            else
+            {
+                <MudTextField Value="@_tenantNombreEdicion" Label="Tenant"
+                              ReadOnly="true" Variant="Variant.Outlined"
+                              HelperText="El tenant no puede cambiarse después de crear la configuración." />
+            }
+
+            <MudTextField @bind-Value="_form.ProveedorNombre" Label="Proveedor"
+                          Placeholder="ej: mercadopago" Variant="Variant.Outlined"
+                          HelperText="Nombre del proveedor de pagos (inmutable después de creado)"
+                          Disabled="@_isEditing" />
+
+            <MudTextField @bind-Value="_form.CuentaExternaId" Label="Cuenta Externa ID"
+                          Placeholder="ej: 123456789" Variant="Variant.Outlined"
+                          HelperText="Identificador de la cuenta en el proveedor (ej: user_id de MercadoPago)" />
+
+            <MudTextField @bind-Value="_form.BaseUrl" Label="URL Base del proveedor"
+                          Placeholder="https://api.mercadopago.com" Variant="Variant.Outlined" />
+
+            <MudSwitch @bind-Value="_form.IsActive" Color="Color.Success" Label="Activo" />
+
+            @* Credenciales — solo en alta *@
+            @if (_isCreating)
+            {
+                <MudDivider Class="my-1" />
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Credenciales</MudText>
+
+                <MudTextField @bind-Value="_form.AccessToken" Label="Access Token"
+                              InputType="@(_mostrarToken ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_mostrarToken ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _mostrarToken = !_mostrarToken)"
+                              Variant="Variant.Outlined"
+                              HelperText="Token de acceso a la API del proveedor. Se cifra antes de persistir." />
+
+                <MudTextField @bind-Value="_form.SigningSecret" Label="Signing Secret"
+                              InputType="@(_mostrarSecret ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_mostrarSecret ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _mostrarSecret = !_mostrarSecret)"
+                              Variant="Variant.Outlined"
+                              HelperText="Secret de validación de firma de webhooks. Se cifra antes de persistir." />
+            }
+            else
+            {
+                @* En edición: solo mostrar hint como referencia, no editable *@
+                @if (!string.IsNullOrEmpty(_hintEdicion))
+                {
+                    <MudTextField Value="@_hintEdicion" Label="Token actual (enmascarado)"
+                                  ReadOnly="true" Variant="Variant.Outlined"
+                                  HelperText="Las credenciales nunca se muestran en claro. Para cambiarlas usá el botón 'Cambiar credenciales'." />
+                }
+            }
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-2">@_errorMessage</MudAlert>
+            }
+
+            <MudStack Row="true" Spacing="2" Class="mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save" OnClick="Guardar">
+                    Guardar
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="@(() => Navigation.NavigateTo("/proveedores"))">
+                    Cancelar
+                </MudButton>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+}
+else
+{
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" Href="/proveedores/create">
+            Nueva configuración
+        </MudButton>
+
+        @* Filtro por tenant *@
+        <MudSelect T="int" Value="_filtroTenantId" ValueChanged="CambiarFiltro"
+                   Label="Filtrar por tenant" Variant="Variant.Outlined"
+                   Style="min-width: 220px;">
+            <MudSelectItem T="int" Value="0">— Todos los tenants —</MudSelectItem>
+            @foreach (var t in _tenants)
+            {
+                <MudSelectItem T="int" Value="@t.Id">@t.Name (@t.Slug)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudStack>
+
+    @if (_configs.Any())
+    {
+        <MudSimpleTable Hover="true" Dense="true" Elevation="2">
+            <thead>
+                <tr>
+                    <th>Tenant</th>
+                    <th>Proveedor</th>
+                    <th>Cuenta Externa ID</th>
+                    <th>URL Base</th>
+                    <th>Estado</th>
+                    <th>Token (hint)</th>
+                    <th>Actualizado</th>
+                    <th style="min-width: 180px; white-space: nowrap;">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var cfg in _configs)
+                {
+                    <tr>
+                        <td>@cfg.TenantNombre</td>
+                        <td><code>@cfg.ProveedorNombre</code></td>
+                        <td>@cfg.CuentaExternaId</td>
+                        <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@cfg.BaseUrl</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(cfg.IsActive ? Color.Success : Color.Error)">
+                                @(cfg.IsActive ? "Activo" : "Inactivo")
+                            </MudChip>
+                        </td>
+                        <td><code>@cfg.HintCredenciales</code></td>
+                        <td>@cfg.UpdatedAt.ToString("dd/MM/yy HH:mm")</td>
+                        <td style="min-width: 180px; white-space: nowrap;">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           Title="Editar metadata"
+                                           OnClick="@(() => Navigation.NavigateTo($"/proveedores/{cfg.Id}/edit"))" />
+                            <MudIconButton Icon="@(cfg.IsActive ? Icons.Material.Filled.Pause : Icons.Material.Filled.PlayArrow)"
+                                           Size="Size.Small"
+                                           Color="@(cfg.IsActive ? Color.Warning : Color.Success)"
+                                           Title="@(cfg.IsActive ? "Desactivar" : "Activar")"
+                                           OnClick="@(() => ToggleActivo(cfg))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Key"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           Title="Cambiar credenciales"
+                                           OnClick="@(() => AbrirCambiarCredenciales(cfg))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           Title="Eliminar"
+                                           OnClick="@(() => Eliminar(cfg))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No hay configuraciones de proveedor
+            @if (_filtroTenantId != 0)
+            {
+                <span> para el tenant seleccionado</span>
+            }
+            . ¡Creá la primera!
+        </MudAlert>
+    }
+}
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    // ─── Estado general ───────────────────────────────────────────────────────
+
+    private List<ProveedorConfigMetadataDto> _configs = [];
+    private List<ProveedorConfigMetadataDto> _todosLosConfigs = [];
+    private List<Tenant> _tenants = [];
+    private int _filtroTenantId;
+
+    // ─── Estado de formulario ─────────────────────────────────────────────────
+
+    private ProveedorFormModel _form = new();
+    private string? _errorMessage;
+    private bool _mostrarToken;
+    private bool _mostrarSecret;
+    private string _tenantNombreEdicion = string.Empty;
+    private string _hintEdicion = string.Empty;
+
+    // ─── Routing helpers ──────────────────────────────────────────────────────
+
+    private bool _isCreating => Navigation.Uri.EndsWith("/create", StringComparison.OrdinalIgnoreCase);
+    private bool _isEditing  => Navigation.Uri.Contains("/edit",   StringComparison.OrdinalIgnoreCase);
+
+    // ─── Ciclo de vida ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await HandleRouteAsync();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        InvokeAsync(async () =>
+        {
+            await HandleRouteAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+
+    private async Task HandleRouteAsync()
+    {
+        _errorMessage = null;
+        await CargarTenants();
+
+        if (_isEditing)
+        {
+            var editId = ExtraerIdDesdeUri();
+            if (editId.HasValue)
+            {
+                Id = editId;
+                await CargarParaEditar(editId.Value);
+            }
+        }
+        else if (_isCreating)
+        {
+            _form = new ProveedorFormModel();
+
+            // Pre-seleccionar tenant si viene por query param ?tenant={slug}
+            var uri = new Uri(Navigation.Uri);
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+            if (query.TryGetValue("tenant", out var slugParam) && !string.IsNullOrEmpty(slugParam))
+            {
+                var tenant = _tenants.FirstOrDefault(t =>
+                    t.Slug.Equals(slugParam!, StringComparison.OrdinalIgnoreCase));
+                if (tenant is not null)
+                    _form.TenantId = tenant.Id;
+            }
+        }
+        else
+        {
+            // Listado: aplicar pre-filtro de query param ?tenant={slug}
+            await CargarConfigs();
+            var uri = new Uri(Navigation.Uri);
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+            if (query.TryGetValue("tenant", out var slugParam) && !string.IsNullOrEmpty(slugParam))
+            {
+                var tenant = _tenants.FirstOrDefault(t =>
+                    t.Slug.Equals(slugParam!, StringComparison.OrdinalIgnoreCase));
+                if (tenant is not null)
+                    _filtroTenantId = tenant.Id;
+            }
+            AplicarFiltro();
+        }
+    }
+
+    private long? ExtraerIdDesdeUri()
+    {
+        var uri = Navigation.Uri;
+        var match = System.Text.RegularExpressions.Regex.Match(
+            uri, @"/proveedores/(\d+)/edit",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success && long.TryParse(match.Groups[1].Value, out var id) ? id : null;
+    }
+
+    // ─── Carga de datos ───────────────────────────────────────────────────────
+
+    private async Task CargarTenants()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        _tenants = await db.Tenants.AsNoTracking().OrderBy(t => t.Name).ToListAsync();
+    }
+
+    private async Task CargarConfigs()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var appService = scope.ServiceProvider.GetRequiredService<ProveedorWebhookConfigAppService>();
+        _todosLosConfigs = await appService.ListarMetadataAsync();
+    }
+
+    private void AplicarFiltro()
+    {
+        _configs = _filtroTenantId == 0
+            ? _todosLosConfigs
+            : _todosLosConfigs.Where(c => c.TenantId == _filtroTenantId).ToList();
+    }
+
+    private async Task CargarParaEditar(long id)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var appService = scope.ServiceProvider.GetRequiredService<ProveedorWebhookConfigAppService>();
+        var lista = await appService.ListarMetadataAsync();
+        var cfg = lista.FirstOrDefault(c => c.Id == id);
+        if (cfg is not null)
+        {
+            _form = new ProveedorFormModel
+            {
+                TenantId       = cfg.TenantId,
+                ProveedorNombre = cfg.ProveedorNombre,
+                CuentaExternaId = cfg.CuentaExternaId,
+                BaseUrl        = cfg.BaseUrl,
+                IsActive       = cfg.IsActive
+            };
+            _tenantNombreEdicion = $"{cfg.TenantNombre} (TenantId: {cfg.TenantId})";
+            _hintEdicion = cfg.HintCredenciales;
+        }
+    }
+
+    // ─── Acciones de formulario ───────────────────────────────────────────────
+
+    private async Task Guardar()
+    {
+        _errorMessage = null;
+
+        if (_form.TenantId == 0)
+        {
+            _errorMessage = "Seleccioná un tenant.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.ProveedorNombre))
+        {
+            _errorMessage = "El campo 'Proveedor' es obligatorio.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.CuentaExternaId))
+        {
+            _errorMessage = "El campo 'Cuenta Externa ID' es obligatorio.";
+            return;
+        }
+
+        if (_isEditing && Id.HasValue)
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var appService = scope.ServiceProvider.GetRequiredService<ProveedorWebhookConfigAppService>();
+            var result = await appService.ActualizarMetadataAsync(
+                id: Id.Value,
+                cuentaExternaId: _form.CuentaExternaId,
+                baseUrl: _form.BaseUrl,
+                isActive: _form.IsActive);
+
+            if (!result.IsSuccess)
+            {
+                _errorMessage = result.Message;
+                return;
+            }
+
+            Snackbar.Add("Configuración actualizada.", Severity.Success);
+            Navigation.NavigateTo("/proveedores");
+            return;
+        }
+
+        // Alta: requiere credenciales
+        if (string.IsNullOrWhiteSpace(_form.AccessToken))
+        {
+            _errorMessage = "El campo 'Access Token' es obligatorio en el alta.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.SigningSecret))
+        {
+            _errorMessage = "El campo 'Signing Secret' es obligatorio en el alta.";
+            return;
+        }
+
+        var credencialesJson = JsonSerializer.Serialize(new
+        {
+            access_token   = _form.AccessToken,
+            signing_secret = _form.SigningSecret
+        });
+
+        using var altaScope = ScopeFactory.CreateScope();
+        var altaService = altaScope.ServiceProvider.GetRequiredService<ProveedorWebhookConfigAppService>();
+        var altaResult = await altaService.UpsertAsync(
+            tenantId:        _form.TenantId,
+            proveedorNombre: _form.ProveedorNombre,
+            cuentaExternaId: _form.CuentaExternaId,
+            credencialesJson: credencialesJson,
+            baseUrl:         _form.BaseUrl,
+            isActive:        _form.IsActive);
+
+        if (!altaResult.IsSuccess)
+        {
+            _errorMessage = altaResult.Message;
+            return;
+        }
+
+        Snackbar.Add("Configuración creada correctamente.", Severity.Success);
+        Navigation.NavigateTo("/proveedores");
+    }
+
+    // ─── Acciones de listado ──────────────────────────────────────────────────
+
+    private async Task CambiarFiltro(int tenantId)
+    {
+        _filtroTenantId = tenantId;
+        AplicarFiltro();
+        await Task.CompletedTask;
+    }
+
+    private async Task ToggleActivo(ProveedorConfigMetadataDto cfg)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var appService = scope.ServiceProvider.GetRequiredService<ProveedorWebhookConfigAppService>();
+        var result = await appService.ActualizarMetadataAsync(
+            id: cfg.Id,
+            cuentaExternaId: cfg.CuentaExternaId,
+            baseUrl: cfg.BaseUrl,
+            isActive: !cfg.IsActive);
+
+        if (!result.IsSuccess)
+        {
+            Snackbar.Add(result.Message ?? "Error al cambiar el estado.", Severity.Error);
+            return;
+        }
+
+        Snackbar.Add($"Proveedor '{cfg.ProveedorNombre}' {(cfg.IsActive ? "desactivado" : "activado")}.", Severity.Success);
+        await RefrescarListado();
+    }
+
+    private async Task AbrirCambiarCredenciales(ProveedorConfigMetadataDto cfg)
+    {
+        var parameters = new DialogParameters
+        {
+            [nameof(CambiarCredencialesDialog.TenantId)]       = cfg.TenantId,
+            [nameof(CambiarCredencialesDialog.ProveedorNombre)] = cfg.ProveedorNombre,
+            [nameof(CambiarCredencialesDialog.CuentaExternaId)] = cfg.CuentaExternaId,
+            [nameof(CambiarCredencialesDialog.BaseUrl)]         = cfg.BaseUrl,
+            [nameof(CambiarCredencialesDialog.IsActive)]        = cfg.IsActive,
+            [nameof(CambiarCredencialesDialog.HintActual)]      = cfg.HintCredenciales,
+            [nameof(CambiarCredencialesDialog.OnSuccess)]       = EventCallback.Factory.Create(this, RefrescarListado)
+        };
+
+        await DialogService.ShowAsync<CambiarCredencialesDialog>(
+            "Cambiar credenciales", parameters);
+    }
+
+    private async Task Eliminar(ProveedorConfigMetadataDto cfg)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"¿Eliminar la configuración del proveedor '{cfg.ProveedorNombre}' " +
+                              $"para el tenant '{cfg.TenantNombre}'? Esta acción es irreversible.",
+            ["ButtonText"]  = "Eliminar",
+            ["Color"]       = Color.Error
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar eliminación", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        using var scope = ScopeFactory.CreateScope();
+        var appService = scope.ServiceProvider.GetRequiredService<ProveedorWebhookConfigAppService>();
+        var deleteResult = await appService.EliminarAsync(cfg.Id);
+
+        if (deleteResult.IsSuccess)
+            Snackbar.Add($"Configuración de '{cfg.ProveedorNombre}' eliminada.", Severity.Success);
+        else
+            Snackbar.Add(deleteResult.Message ?? "Error al eliminar la configuración.", Severity.Error);
+
+        await RefrescarListado();
+    }
+
+    private async Task RefrescarListado()
+    {
+        await CargarConfigs();
+        AplicarFiltro();
+        StateHasChanged();
+    }
+
+    // ─── Modelo de formulario ─────────────────────────────────────────────────
+
+    private class ProveedorFormModel
+    {
+        public int    TenantId        { get; set; }
+        public string ProveedorNombre  { get; set; } = string.Empty;
+        public string CuentaExternaId  { get; set; } = string.Empty;
+        public string BaseUrl          { get; set; } = string.Empty;
+        public bool   IsActive         { get; set; } = true;
+        public string AccessToken      { get; set; } = string.Empty;
+        public string SigningSecret     { get; set; } = string.Empty;
+    }
+}

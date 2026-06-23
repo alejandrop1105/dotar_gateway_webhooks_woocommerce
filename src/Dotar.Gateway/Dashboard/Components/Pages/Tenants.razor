@@ -134,13 +134,18 @@ else
                             </MudChip>
                         </td>
                         <td><code>/ingest/@t.Slug</code></td>
-                        <td style="min-width: 140px; white-space: nowrap;">
+                        <td style="min-width: 180px; white-space: nowrap;">
                             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
                                            Href="@($"/tenants/{t.Id}/edit")" />
                             <MudIconButton Icon="@(t.IsActive ? Icons.Material.Filled.Pause : Icons.Material.Filled.PlayArrow)"
                                            Size="Size.Small"
                                            Color="@(t.IsActive ? Color.Error : Color.Success)"
                                            OnClick="() => ToggleActive(t)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Webhook"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           Title="Ver configuración de proveedor"
+                                           OnClick="@(() => Navigation.NavigateTo($"/proveedores?tenant={t.Slug}"))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
                                            Color="Color.Error"
                                            OnClick="() => DeleteTenant(t)" />
