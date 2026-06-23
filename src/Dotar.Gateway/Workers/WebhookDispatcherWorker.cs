@@ -207,7 +207,10 @@ public class WebhookDispatcherWorker : BackgroundService
 
         // 2. Obtener ProveedorWebhookConfig del tenant para el enriquecimiento.
         //    Se incluye el Tenant para obtener WebhookSecret en el mismo scope (evita segundo scope).
+        //    Además se descifran las credenciales vía ProveedorWebhookConfigAppService para no pasar
+        //    el ciphertext al provider (que espera JSON en claro con AccessToken y SigningSecret).
         ProveedorWebhookConfig? configEntidad;
+        ProveedorWebhookConfig? configParaProvider;
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -218,6 +221,43 @@ public class WebhookDispatcherWorker : BackgroundService
                 .FirstOrDefaultAsync(p =>
                     p.TenantId == webhook.TenantId &&
                     p.ProveedorNombre == proveedorNombre, ct);
+
+            if (configEntidad is not null)
+            {
+                // Descifrar credenciales con el AppService y reconstruir la entidad con JSON en claro.
+                // Idéntico al patrón del endpoint WebhookProveedorEndpoints que ya funciona bien.
+                var configAppService = scope.ServiceProvider
+                    .GetRequiredService<Application.ProveedorWebhookConfigAppService>();
+                var credencialesDescifradas = await configAppService
+                    .GetByTenantYProveedorAsync(webhook.TenantId, proveedorNombre);
+
+                // Filtrar inactivas coherentemente con GetCompletoByProveedorYCuentaAsync
+                if (credencialesDescifradas is null || !credencialesDescifradas.IsActive)
+                {
+                    configParaProvider = null;
+                }
+                else
+                {
+                    configParaProvider = new ProveedorWebhookConfig
+                    {
+                        TenantId = configEntidad.TenantId,
+                        ProveedorNombre = configEntidad.ProveedorNombre,
+                        CuentaExternaId = configEntidad.CuentaExternaId,
+                        CredencialesCifradas = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            SigningSecret = credencialesDescifradas.SigningSecret,
+                            AccessToken = credencialesDescifradas.AccessToken
+                        }),
+                        BaseUrl = configEntidad.BaseUrl,
+                        IsActive = configEntidad.IsActive,
+                        Tenant = configEntidad.Tenant
+                    };
+                }
+            }
+            else
+            {
+                configParaProvider = null;
+            }
         }
         catch (Exception ex)
         {
@@ -228,16 +268,19 @@ public class WebhookDispatcherWorker : BackgroundService
             return;
         }
 
-        if (configEntidad is null)
+        if (configEntidad is null || configParaProvider is null)
         {
+            var motivo = configEntidad is null
+                ? "config_proveedor_no_encontrada"
+                : "config_proveedor_inactiva";
             _logger.LogWarning(
-                "Sin config de proveedor '{Proveedor}' para tenant {TenantId}. Dead-letter.",
-                proveedorNombre, webhook.TenantId);
+                "Sin config activa de proveedor '{Proveedor}' para tenant {TenantId}. Dead-letter ({Motivo}).",
+                proveedorNombre, webhook.TenantId, motivo);
             _systemLog.Warn(SystemLogCategory.Forward,
-                $"Sin config de proveedor '{proveedorNombre}' para tenant {webhook.TenantId}. Dead-letter.",
+                $"Sin config activa de proveedor '{proveedorNombre}' para tenant {webhook.TenantId}. Dead-letter.",
                 eventId: eventId,
-                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}");
-            await SaveDeadLetterAsync(webhook, eventId, "config_proveedor_no_encontrada");
+                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo={motivo}");
+            await SaveDeadLetterAsync(webhook, eventId, motivo);
             return;
         }
 
@@ -257,8 +300,8 @@ public class WebhookDispatcherWorker : BackgroundService
             return;
         }
 
-        // Enriquecer contra la API del proveedor
-        var enrichmentResult = await provider.EnriquecerAsync(idEvento, configEntidad, ct);
+        // Enriquecer contra la API del proveedor usando la config con credenciales descifradas
+        var enrichmentResult = await provider.EnriquecerAsync(idEvento, configParaProvider, ct);
 
         if (!enrichmentResult.Exitoso)
         {

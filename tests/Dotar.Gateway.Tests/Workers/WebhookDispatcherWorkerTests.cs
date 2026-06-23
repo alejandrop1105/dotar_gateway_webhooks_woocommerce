@@ -2,12 +2,14 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Dotar.Gateway.Application;
 using Dotar.Gateway.Domain.Entities;
 using Dotar.Gateway.Domain.Models;
 using Dotar.Gateway.Infrastructure.Data;
 using Dotar.Gateway.Infrastructure.Services;
 using Dotar.Gateway.Providers;
 using Dotar.Gateway.Workers;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -34,6 +36,13 @@ public class WebhookDispatcherWorkerTests : IDisposable
         // Construir ServiceProvider que expone GatewayDbContext + IServiceScopeFactory
         var services = new ServiceCollection();
         services.AddDbContext<GatewayDbContext>(o => o.UseSqlite($"Data Source={_dbPath}"));
+        // Registrar el AppService para que el worker pueda descifrar credenciales.
+        // Se usa EphemeralDataProtectionProvider porque estas credenciales de test están en
+        // claro (no cifradas); el AppService captará la excepción de Unprotect y retornará
+        // strings vacíos, pero IsActive=true permite que el fake provider igore las creds.
+        services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
+        services.AddScoped<ProveedorWebhookConfigAppService>();
+        services.AddLogging();
         _sp = services.BuildServiceProvider();
 
         // Preparar DB
