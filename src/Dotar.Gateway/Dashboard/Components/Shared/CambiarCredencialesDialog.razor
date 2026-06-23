@@ -1,0 +1,141 @@
+@* Dialog para cambiar las credenciales de un proveedor sin tocar su metadata. *@
+@* Los campos accessToken y signingSecret NUNCA se pre-populan. *@
+
+@using Dotar.Gateway.Application
+@using Microsoft.Extensions.DependencyInjection
+@using System.Text.Json
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Key" Class="mr-2" />
+            Cambiar credenciales
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3" Class="pt-2">
+            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+                Proveedor: <strong>@ProveedorNombre</strong> — Cuenta: <strong>@CuentaExternaId</strong>
+            </MudAlert>
+
+            @if (!string.IsNullOrEmpty(HintActual))
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Token actual (enmascarado): <code>@HintActual</code>
+                </MudText>
+            }
+
+            <MudTextField @bind-Value="_accessToken"
+                          Label="Access Token"
+                          HelperText="Nuevo access token del proveedor. No se muestra el valor anterior."
+                          InputType="@(_mostrarToken ? InputType.Text : InputType.Password)"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@(_mostrarToken ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                          OnAdornmentClick="@(() => _mostrarToken = !_mostrarToken)"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+
+            <MudTextField @bind-Value="_signingSecret"
+                          Label="Signing Secret"
+                          HelperText="Nuevo signing secret del proveedor. No se muestra el valor anterior."
+                          InputType="@(_mostrarSecret ? InputType.Text : InputType.Password)"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@(_mostrarSecret ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                          OnAdornmentClick="@(() => _mostrarSecret = !_mostrarSecret)"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar" Disabled="_guardando">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   OnClick="Confirmar"
+                   Disabled="@(_guardando || !CamposCompletos)">
+            @(_guardando ? "Guardando..." : "Confirmar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public int TenantId { get; set; }
+    [Parameter] public string ProveedorNombre { get; set; } = string.Empty;
+    [Parameter] public string CuentaExternaId { get; set; } = string.Empty;
+    [Parameter] public string BaseUrl { get; set; } = string.Empty;
+    [Parameter] public bool IsActive { get; set; }
+    [Parameter] public string HintActual { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnSuccess { get; set; }
+
+    private string _accessToken = string.Empty;
+    private string _signingSecret = string.Empty;
+    private bool _mostrarToken;
+    private bool _mostrarSecret;
+    private bool _guardando;
+    private string? _errorMessage;
+
+    private bool CamposCompletos =>
+        !string.IsNullOrWhiteSpace(_accessToken) &&
+        !string.IsNullOrWhiteSpace(_signingSecret);
+
+    private async Task Confirmar()
+    {
+        _errorMessage = null;
+
+        if (!CamposCompletos)
+        {
+            _errorMessage = "El Access Token y el Signing Secret son obligatorios.";
+            return;
+        }
+
+        _guardando = true;
+        try
+        {
+            // Armar JSON de credenciales en snake_case (formato interno del AppService).
+            var credencialesJson = JsonSerializer.Serialize(new
+            {
+                access_token = _accessToken,
+                signing_secret = _signingSecret
+            });
+
+            using var scope = ScopeFactory.CreateScope();
+            var appService = scope.ServiceProvider.GetRequiredService<ProveedorWebhookConfigAppService>();
+
+            var result = await appService.UpsertAsync(
+                tenantId: TenantId,
+                proveedorNombre: ProveedorNombre,
+                cuentaExternaId: CuentaExternaId,
+                credencialesJson: credencialesJson,
+                baseUrl: BaseUrl,
+                isActive: IsActive);
+
+            if (!result.IsSuccess)
+            {
+                _errorMessage = result.Message ?? "Error al actualizar las credenciales.";
+                return;
+            }
+
+            Snackbar.Add("Credenciales actualizadas correctamente.", Severity.Success);
+            await OnSuccess.InvokeAsync();
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error inesperado: {ex.Message}";
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}
