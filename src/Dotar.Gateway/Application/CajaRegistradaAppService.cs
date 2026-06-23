@@ -124,6 +124,46 @@ public sealed class CajaRegistradaAppService
         return Result<CajaDto>.Success(ToDto(caja));
     }
 
+    /// <summary>
+    /// Retorna la lista de cajas registradas para el tenant indicado.
+    /// Si tenantId es null, retorna todas las cajas de todos los tenants.
+    /// </summary>
+    public async Task<List<CajaDto>> ListarPorTenantAsync(int? tenantId)
+    {
+        var query = _db.CajasRegistradas.AsNoTracking();
+
+        if (tenantId.HasValue)
+            query = query.Where(c => c.TenantId == tenantId.Value);
+
+        var cajas = await query.ToListAsync();
+        return cajas.Select(ToDto).ToList();
+    }
+
+    /// <summary>
+    /// Revoca (elimina) una caja del padrón por su Id e invalida su entrada de caché.
+    /// Si el Id no existe retorna Result.NotFound sin lanzar excepción.
+    /// No afecta el flujo de auto-registro (RegistrarAsync) ni la caché de otras cajas.
+    /// </summary>
+    public async Task<Result> RevocarAsync(long id)
+    {
+        var caja = await _db.CajasRegistradas
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (caja is null)
+            return Result.NotFound($"No se encontró la caja con Id {id} en el padrón.");
+
+        _db.CajasRegistradas.Remove(caja);
+        await _db.SaveChangesAsync();
+
+        _cache.Invalidate(caja.TenantId, caja.Identificador);
+
+        _logger.LogInformation(
+            "Caja '{Identificador}' del tenant {TenantId} (Id={Id}) revocada del padrón.",
+            caja.Identificador, caja.TenantId, id);
+
+        return Result.Success();
+    }
+
     // ─── Helpers privados ─────────────────────────────────────────────────────
 
     /// <summary>

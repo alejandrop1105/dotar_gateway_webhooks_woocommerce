@@ -7,6 +7,23 @@ using Microsoft.EntityFrameworkCore;
 namespace Dotar.Gateway.Application;
 
 /// <summary>
+/// DTO de metadata de un proveedor sin credenciales en claro.
+/// Solo expone un hint enmascarado del accessToken (últimos 6 chars con prefijo ••••••).
+/// El accessToken completo, signingSecret y CredencialesCifradas nunca se incluyen.
+/// </summary>
+public sealed record ProveedorConfigMetadataDto(
+    long Id,
+    int TenantId,
+    string TenantNombre,
+    string ProveedorNombre,
+    string CuentaExternaId,
+    string BaseUrl,
+    bool IsActive,
+    string HintCredenciales,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);
+
+/// <summary>
 /// DTO con las credenciales descifradas del proveedor.
 /// Solo se expone en memoria; nunca se serializa ni se devuelve en respuestas HTTP.
 /// </summary>
@@ -212,7 +229,122 @@ public sealed class ProveedorWebhookConfigAppService
             config.IsActive);
     }
 
+    /// <summary>
+    /// Retorna la lista de configuraciones de proveedor como DTOs de solo metadata,
+    /// incluyendo un hint enmascarado del accessToken. El accessToken completo,
+    /// signingSecret y ciphertext nunca se exponen en el resultado.
+    /// </summary>
+    public async Task<List<ProveedorConfigMetadataDto>> ListarMetadataAsync()
+    {
+        var configs = await _db.ProveedoresWebhookConfig
+            .AsNoTracking()
+            .Include(p => p.Tenant)
+            .ToListAsync();
+
+        var resultado = new List<ProveedorConfigMetadataDto>(configs.Count);
+
+        foreach (var config in configs)
+        {
+            string hint;
+            try
+            {
+                var plaintext = _protector.Unprotect(config.CredencialesCifradas);
+                var creds = JsonSerializer.Deserialize<CredencialesJson>(plaintext,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var accessToken = creds?.AccessToken ?? string.Empty;
+                hint = Hint(accessToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error al descifrar credenciales del proveedor '{Proveedor}' (tenant {TenantId}) para generar hint.",
+                    config.ProveedorNombre, config.TenantId);
+                hint = "••••••??????";
+            }
+
+            resultado.Add(new ProveedorConfigMetadataDto(
+                Id: config.Id,
+                TenantId: config.TenantId,
+                TenantNombre: config.Tenant?.Name ?? string.Empty,
+                ProveedorNombre: config.ProveedorNombre,
+                CuentaExternaId: config.CuentaExternaId,
+                BaseUrl: config.BaseUrl,
+                IsActive: config.IsActive,
+                HintCredenciales: hint,
+                CreatedAt: config.CreatedAt,
+                UpdatedAt: config.UpdatedAt));
+        }
+
+        return resultado;
+    }
+
+    /// <summary>
+    /// Actualiza solo la metadata de una configuración de proveedor (cuentaExternaId, baseUrl, isActive)
+    /// sin tocar las credenciales cifradas. Usado por la UI para toggles y edición de campos no sensibles.
+    /// </summary>
+    public async Task<Result> ActualizarMetadataAsync(
+        long id,
+        string cuentaExternaId,
+        string baseUrl,
+        bool isActive)
+    {
+        if (string.IsNullOrWhiteSpace(cuentaExternaId))
+            return Result.Validation("El campo 'cuentaExternaId' es obligatorio.");
+
+        var config = await _db.ProveedoresWebhookConfig
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (config is null)
+            return Result.NotFound($"No se encontró la configuración de proveedor con Id {id}.");
+
+        config.CuentaExternaId = cuentaExternaId;
+        config.BaseUrl = baseUrl;
+        config.IsActive = isActive;
+        config.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Metadata del proveedor '{Proveedor}' (Id={Id}) actualizada.",
+            config.ProveedorNombre, id);
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Elimina una configuración de proveedor por su Id.
+    /// Si el Id no existe retorna Result.NotFound sin lanzar excepción.
+    /// No afecta las entidades CajaRegistrada ni el flujo de ingesta.
+    /// </summary>
+    public async Task<Result> EliminarAsync(long id)
+    {
+        var config = await _db.ProveedoresWebhookConfig
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (config is null)
+            return Result.NotFound($"No se encontró la configuración de proveedor con Id {id}.");
+
+        _db.ProveedoresWebhookConfig.Remove(config);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Config del proveedor '{Proveedor}' (Id={Id}) eliminada.",
+            config.ProveedorNombre, id);
+
+        return Result.Success();
+    }
+
     // ─── Helpers privados ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Genera el hint enmascarado de una credencial descifrada.
+    /// Si la longitud es de 6 o menos, muestra todos los chars; si no, muestra los últimos 6.
+    /// El secreto completo nunca sale del servidor.
+    /// </summary>
+    private static string Hint(string descifrado)
+        => descifrado.Length <= 6
+            ? "••••••" + descifrado
+            : "••••••" + descifrado[^6..];
 
     private CredencialesProveedorDto Descifrar(ProveedorWebhookConfig config)
     {
