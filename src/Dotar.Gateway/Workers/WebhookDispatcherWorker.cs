@@ -284,40 +284,66 @@ public class WebhookDispatcherWorker : BackgroundService
             return;
         }
 
-        // 3. Extraer idEvento del payload (ej. data.id en MP).
-        //    Si no se puede extraer, dead-letter inmediato sin llamar EnriquecerAsync con id vacío.
-        var idEvento = ExtraerIdEvento(webhook.Payload);
-        if (string.IsNullOrEmpty(idEvento))
+        // 3. Bifurcación por tipo de notificación:
+        //    - order → rutear directo desde data.external_reference del RAW, sin llamar a la API de MP.
+        //    - payment (o sin type) → flujo de enriquecimiento existente, intacto.
+        RoutingKeyResult routingKeyResult;
+
+        if (provider.RutearSinEnriquecimiento(webhook.Payload))
         {
-            _logger.LogWarning(
-                "No se pudo extraer idEvento del payload para proveedor '{Proveedor}' tenant {TenantId}. Dead-letter.",
-                proveedorNombre, webhook.TenantId);
-            _systemLog.Warn(SystemLogCategory.Forward,
-                $"No se pudo extraer idEvento del payload para proveedor '{proveedorNombre}'. Dead-letter.",
+            // Rama order: sin enriquecimiento
+            _systemLog.Info(SystemLogCategory.Worker,
+                $"Notificación MP tipo 'order' detectada — modo sin_enriquecimiento.",
                 eventId: eventId,
-                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo=id_evento_no_extraible");
-            await SaveDeadLetterAsync(webhook, eventId, "id_evento_no_extraible");
-            return;
+                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; modo=sin_enriquecimiento");
+
+            routingKeyResult = provider.ExtraerRoutingKeyDesdeNotificacion(webhook.Payload);
+        }
+        else
+        {
+            // Rama payment / default: flujo de enriquecimiento existente (intacto)
+            _systemLog.Info(SystemLogCategory.Worker,
+                $"Notificación MP tipo 'payment' detectada — modo con_enriquecimiento.",
+                eventId: eventId,
+                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; modo=con_enriquecimiento");
+
+            // 3a. Extraer idEvento del payload (ej. data.id en MP).
+            //     Si no se puede extraer, dead-letter inmediato sin llamar EnriquecerAsync con id vacío.
+            var idEvento = ExtraerIdEvento(webhook.Payload);
+            if (string.IsNullOrEmpty(idEvento))
+            {
+                _logger.LogWarning(
+                    "No se pudo extraer idEvento del payload para proveedor '{Proveedor}' tenant {TenantId}. Dead-letter.",
+                    proveedorNombre, webhook.TenantId);
+                _systemLog.Warn(SystemLogCategory.Forward,
+                    $"No se pudo extraer idEvento del payload para proveedor '{proveedorNombre}'. Dead-letter.",
+                    eventId: eventId,
+                    details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo=id_evento_no_extraible");
+                await SaveDeadLetterAsync(webhook, eventId, "id_evento_no_extraible");
+                return;
+            }
+
+            // 3b. Enriquecer contra la API del proveedor usando la config con credenciales descifradas
+            var enrichmentResult = await provider.EnriquecerAsync(idEvento, configParaProvider, ct);
+
+            if (!enrichmentResult.Exitoso)
+            {
+                _logger.LogWarning(
+                    "Enriquecimiento fallido para proveedor '{Proveedor}' tenant {TenantId}: {Error}. Dead-letter.",
+                    proveedorNombre, webhook.TenantId, enrichmentResult.ErrorMessage);
+                _systemLog.Warn(SystemLogCategory.Forward,
+                    $"Enriquecimiento fallido para proveedor '{proveedorNombre}': {enrichmentResult.ErrorMessage}. Dead-letter.",
+                    eventId: eventId,
+                    details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; error={enrichmentResult.ErrorMessage}");
+                await SaveDeadLetterAsync(webhook, eventId, "error_enriquecimiento");
+                return;
+            }
+
+            // 3c. Extraer routing key del payload enriquecido
+            routingKeyResult = provider.ExtraerRoutingKey(enrichmentResult.PayloadEnriquecido!);
         }
 
-        // Enriquecer contra la API del proveedor usando la config con credenciales descifradas
-        var enrichmentResult = await provider.EnriquecerAsync(idEvento, configParaProvider, ct);
-
-        if (!enrichmentResult.Exitoso)
-        {
-            _logger.LogWarning(
-                "Enriquecimiento fallido para proveedor '{Proveedor}' tenant {TenantId}: {Error}. Dead-letter.",
-                proveedorNombre, webhook.TenantId, enrichmentResult.ErrorMessage);
-            _systemLog.Warn(SystemLogCategory.Forward,
-                $"Enriquecimiento fallido para proveedor '{proveedorNombre}': {enrichmentResult.ErrorMessage}. Dead-letter.",
-                eventId: eventId,
-                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; error={enrichmentResult.ErrorMessage}");
-            await SaveDeadLetterAsync(webhook, eventId, "error_enriquecimiento");
-            return;
-        }
-
-        // 4. Extraer routing key del payload enriquecido
-        var routingKeyResult = provider.ExtraerRoutingKey(enrichmentResult.PayloadEnriquecido!);
+        // ── Tramo común (order y payment): chequeo routing key, buscar caja, firmar, reenviar ──
         if (!routingKeyResult.EsValido)
         {
             _logger.LogWarning(

@@ -365,6 +365,171 @@ public class MercadoPagoProviderTests
         Assert.Equal("Bearer MI-TOKEN", capturado.Headers.Authorization?.ToString());
     }
 
+    // ─── RutearSinEnriquecimiento ──────────────────────────────────────────
+
+    [Fact]
+    public void RutearSinEnriquecimiento_TipoOrder_RetornaTrue()
+    {
+        // P1: payload con type=order → true (REQ-1 escenario 1)
+        var sut = BuildSut();
+        var payload = """{"id":1,"type":"order","data":{"id":"ORD-01"}}""";
+
+        var resultado = sut.RutearSinEnriquecimiento(payload);
+
+        Assert.True(resultado);
+    }
+
+    [Fact]
+    public void RutearSinEnriquecimiento_TipoPayment_RetornaFalse()
+    {
+        // P2: payload con type=payment → false (REQ-1 escenario 2)
+        var sut = BuildSut();
+        var payload = """{"id":1,"type":"payment","data":{"id":"12345"}}""";
+
+        var resultado = sut.RutearSinEnriquecimiento(payload);
+
+        Assert.False(resultado);
+    }
+
+    [Fact]
+    public void RutearSinEnriquecimiento_SinCampoType_RetornaFalse()
+    {
+        // P3: payload sin campo type → false conservador (REQ-1 escenario 3)
+        var sut = BuildSut();
+        var payload = """{"id":1,"data":{"id":"12345"}}""";
+
+        var resultado = sut.RutearSinEnriquecimiento(payload);
+
+        Assert.False(resultado);
+    }
+
+    [Fact]
+    public void RutearSinEnriquecimiento_JsonInvalido_RetornaFalse_SinExcepcion()
+    {
+        // P4: JSON inválido → false, sin excepción
+        var sut = BuildSut();
+        var payload = "no-es-json";
+
+        var resultado = sut.RutearSinEnriquecimiento(payload);
+
+        Assert.False(resultado);
+    }
+
+    [Fact]
+    public void RutearSinEnriquecimiento_TipoOrderMayusculas_RetornaTrue()
+    {
+        // P5: type=ORDER (mayúsculas) → true (OrdinalIgnoreCase)
+        var sut = BuildSut();
+        var payload = """{"id":1,"type":"ORDER","data":{"id":"ORD-02"}}""";
+
+        var resultado = sut.RutearSinEnriquecimiento(payload);
+
+        Assert.True(resultado);
+    }
+
+    // ─── ExtraerRoutingKeyDesdeNotificacion ────────────────────────────────
+
+    [Fact]
+    public void ExtraerRoutingKeyDesdeNotificacion_ConSeparador_ExternalRefValido_RetornaValido()
+    {
+        // P6: data.external_reference = "003-CAJA_2__260624140146" → Valido("003-CAJA_2") (REQ-2 esc. 1)
+        var sut = BuildSut();
+        var payload = """{"type":"order","data":{"id":"ORD-01","external_reference":"003-CAJA_2__260624140146"}}""";
+
+        var resultado = sut.ExtraerRoutingKeyDesdeNotificacion(payload);
+
+        Assert.True(resultado.EsValido);
+        Assert.Equal("003-CAJA_2", resultado.RoutingKey);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKeyDesdeNotificacion_IdentificadorConGuionBajoSimple_RetornaValido()
+    {
+        // P7: data.external_reference = "CAJA_1__ORD-001" → Valido("CAJA_1") (REQ-2 esc. 2)
+        var sut = BuildSut();
+        var payload = """{"type":"order","data":{"id":"ORD-02","external_reference":"CAJA_1__ORD-001"}}""";
+
+        var resultado = sut.ExtraerRoutingKeyDesdeNotificacion(payload);
+
+        Assert.True(resultado.EsValido);
+        Assert.Equal("CAJA_1", resultado.RoutingKey);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKeyDesdeNotificacion_SinSeparador_RetornaInvalido()
+    {
+        // P8: sin __ en external_reference → Invalid (REQ-2 esc. 4)
+        var sut = BuildSut();
+        var payload = """{"type":"order","data":{"id":"ORD-03","external_reference":"CAJA-01-SIN-SEPARADOR"}}""";
+
+        var resultado = sut.ExtraerRoutingKeyDesdeNotificacion(payload);
+
+        Assert.False(resultado.EsValido);
+        Assert.Null(resultado.RoutingKey);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKeyDesdeNotificacion_ParteIzquierdaVacia_RetornaInvalido()
+    {
+        // P9: parte izquierda vacía "__comprobante" → Invalid (REQ-2 esc. 5)
+        var sut = BuildSut();
+        var payload = """{"type":"order","data":{"id":"ORD-04","external_reference":"__comprobante"}}""";
+
+        var resultado = sut.ExtraerRoutingKeyDesdeNotificacion(payload);
+
+        Assert.False(resultado.EsValido);
+        Assert.Null(resultado.RoutingKey);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKeyDesdeNotificacion_SinExternalReference_RetornaInvalido()
+    {
+        // P10: sin campo data.external_reference → Invalid (REQ-2 esc. 3)
+        var sut = BuildSut();
+        var payload = """{"type":"order","data":{"id":"ORD-05"}}""";
+
+        var resultado = sut.ExtraerRoutingKeyDesdeNotificacion(payload);
+
+        Assert.False(resultado.EsValido);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKeyDesdeNotificacion_SinCampoData_RetornaInvalido()
+    {
+        // P11: sin campo data en payload → Invalid (REQ-2 esc. 3 variante)
+        var sut = BuildSut();
+        var payload = """{"type":"order","id":1}""";
+
+        var resultado = sut.ExtraerRoutingKeyDesdeNotificacion(payload);
+
+        Assert.False(resultado.EsValido);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKeyDesdeNotificacion_JsonInvalido_RetornaInvalido_SinExcepcion()
+    {
+        // P12: JSON inválido → Invalid, sin excepción
+        var sut = BuildSut();
+        var payload = "no-es-json";
+
+        var resultado = sut.ExtraerRoutingKeyDesdeNotificacion(payload);
+
+        Assert.False(resultado.EsValido);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKey_TrasMigrarAHelperDRY_SigueRetornandoMismoResultado()
+    {
+        // P13: no-regresión ExtraerRoutingKey (flujo payment, lee external_reference de la raíz) tras refactor DRY
+        var sut = BuildSut();
+        var payload = """{"external_reference":"003-CAJA_2__260624095836"}""";
+
+        var resultado = sut.ExtraerRoutingKey(payload);
+
+        Assert.True(resultado.EsValido);
+        Assert.Equal("003-CAJA_2", resultado.RoutingKey);
+    }
+
     // ─── Handlers fake ─────────────────────────────────────────────────────
 
     private sealed class FakeResponseHandler : HttpMessageHandler

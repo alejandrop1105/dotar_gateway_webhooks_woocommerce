@@ -818,6 +818,214 @@ public class WebhookDispatcherWorkerTests : IDisposable
         Assert.Single(forwarder.Llamadas);
         Assert.Equal("https://caja1.cfargotunnel.com/callback", forwarder.Llamadas[0].TargetUrl);
     }
+
+    // ─── Tests WU-2: flujo order sin enriquecimiento ─────────────────────────────
+
+    /// <summary>
+    /// W1: type=order + routing key válida + caja existe → reenvío RAW, sin llamar EnriquecerAsync.
+    /// </summary>
+    [Fact]
+    public async Task Worker_Order_RoutingKeyValida_CajaExiste_ReenviaRAWSinEnriquecer()
+    {
+        var rawPayload = """{"type":"order","data":{"id":"ORD-01","external_reference":"CAJA-01__260624"}}""";
+
+        var provider = new FakeProviderForWorker("mercadopago")
+        {
+            RutearSinEnriquecimientoValor = true,
+            RoutingKeyDesdeNotificacionResult = RoutingKeyResult.Valido("CAJA-01")
+        };
+
+        var cajaCache = new FakeCajaCache();
+        cajaCache.Registrar(_tenant.Id, "CAJA-01", new CajaRegistrada
+        {
+            TenantId = _tenant.Id,
+            Identificador = "CAJA-01",
+            CallbackUrl = "https://caja1.cfargotunnel.com/callback",
+            UltimaVez = DateTime.UtcNow
+        });
+
+        var capturingForwarder = new CapturingForwardingService();
+        var worker = BuildWorker(provider: provider, forwarder: capturingForwarder, cajaCache: cajaCache);
+        var webhook = BuildWebhookProveedor(rawPayload);
+
+        await worker.ProcesarWebhookParaTestAsync(webhook, CancellationToken.None);
+
+        // Debe haber un reenvío
+        Assert.Single(capturingForwarder.Llamadas);
+        var llamada = capturingForwarder.Llamadas[0];
+
+        // Payload RAW (no enriquecido)
+        Assert.Equal(rawPayload, llamada.Payload);
+
+        // Destino: callbackUrl de la caja
+        Assert.Equal("https://caja1.cfargotunnel.com/callback", llamada.TargetUrl);
+
+        // No se llamó a EnriquecerAsync (REQ-1 esc. 1, REQ-3 esc. 1)
+        Assert.False(provider.EnriquecimientoLlamado, "EnriquecerAsync NO debe llamarse en flujo order");
+    }
+
+    /// <summary>
+    /// W2: type=order + routing key inválida (data.external_reference ausente o sin __) → dead-letter.
+    /// </summary>
+    [Fact]
+    public async Task Worker_Order_RoutingKeyInvalida_DeadLetter()
+    {
+        var rawPayload = """{"type":"order","data":{"id":"ORD-02"}}""";
+
+        var provider = new FakeProviderForWorker("mercadopago")
+        {
+            RutearSinEnriquecimientoValor = true,
+            RoutingKeyDesdeNotificacionResult = RoutingKeyResult.Invalid
+        };
+
+        var capturingForwarder = new CapturingForwardingService();
+        var worker = BuildWorker(provider: provider, forwarder: capturingForwarder, cajaCache: new FakeCajaCache());
+        var webhook = BuildWebhookProveedor(rawPayload);
+
+        await worker.ProcesarWebhookParaTestAsync(webhook, CancellationToken.None);
+
+        // Sin forward (REQ-2 esc. 3/4/5)
+        Assert.Empty(capturingForwarder.Llamadas);
+
+        // DeadLetter en log
+        using var scope = _sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var log = await db.DeliveryLogs.FirstOrDefaultAsync(l => l.WebhookEventId == webhook.EventId);
+        Assert.NotNull(log);
+        Assert.Equal(DeliveryStatus.DeadLetter, log!.Status);
+    }
+
+    /// <summary>
+    /// W3: type=order + routing key válida + caja NO existe → dead-letter.
+    /// </summary>
+    [Fact]
+    public async Task Worker_Order_CajaNoExiste_DeadLetter()
+    {
+        var rawPayload = """{"type":"order","data":{"id":"ORD-03","external_reference":"CAJA-NOEXI__260624"}}""";
+
+        var provider = new FakeProviderForWorker("mercadopago")
+        {
+            RutearSinEnriquecimientoValor = true,
+            RoutingKeyDesdeNotificacionResult = RoutingKeyResult.Valido("CAJA-NOEXI")
+        };
+
+        var capturingForwarder = new CapturingForwardingService();
+        var worker = BuildWorker(provider: provider, forwarder: capturingForwarder, cajaCache: new FakeCajaCache());
+        var webhook = BuildWebhookProveedor(rawPayload);
+
+        await worker.ProcesarWebhookParaTestAsync(webhook, CancellationToken.None);
+
+        // Sin forward (REQ-3 esc. 2)
+        Assert.Empty(capturingForwarder.Llamadas);
+
+        using var scope = _sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var log = await db.DeliveryLogs.FirstOrDefaultAsync(l => l.WebhookEventId == webhook.EventId);
+        Assert.NotNull(log);
+        Assert.Equal(DeliveryStatus.DeadLetter, log!.Status);
+    }
+
+    /// <summary>
+    /// W4: type=order → EnriquecerAsync NO se llama (assert explícito de no-llamada).
+    /// </summary>
+    [Fact]
+    public async Task Worker_Order_NoLlamaEnriquecerAsync()
+    {
+        var rawPayload = """{"type":"order","data":{"id":"ORD-04","external_reference":"CAJA-01__260624"}}""";
+
+        var provider = new FakeProviderForWorker("mercadopago")
+        {
+            RutearSinEnriquecimientoValor = true,
+            RoutingKeyDesdeNotificacionResult = RoutingKeyResult.Valido("CAJA-01")
+        };
+
+        var cajaCache = new FakeCajaCache();
+        cajaCache.Registrar(_tenant.Id, "CAJA-01", new CajaRegistrada
+        {
+            TenantId = _tenant.Id,
+            Identificador = "CAJA-01",
+            CallbackUrl = "https://caja1.cfargotunnel.com/callback",
+            UltimaVez = DateTime.UtcNow
+        });
+
+        var worker = BuildWorker(provider: provider, forwarder: new CapturingForwardingService(), cajaCache: cajaCache);
+        var webhook = BuildWebhookProveedor(rawPayload);
+
+        await worker.ProcesarWebhookParaTestAsync(webhook, CancellationToken.None);
+
+        // Verificación explícita: EnriquecerAsync nunca fue llamado (REQ-1 esc. 1)
+        Assert.False(provider.EnriquecimientoLlamado,
+            "EnriquecerAsync NO debe llamarse en flujo order (REQ-1)");
+    }
+
+    /// <summary>
+    /// W5: type=payment (RutearSinEnriquecimientoValor=false) → EnriquecerAsync se llama (no-regresión).
+    /// </summary>
+    [Fact]
+    public async Task Worker_Payment_EnriquecimientoLlamado_NoRegresion()
+    {
+        var rawPayload = """{"topic":"payment","id":"12345"}""";
+        var enriquecido = """{"id":12345,"external_reference":"CAJA-01__00001234","status":"approved"}""";
+
+        var provider = new FakeProviderForWorker("mercadopago")
+        {
+            RutearSinEnriquecimientoValor = false,
+            EnriquecimientoResult = EnrichmentResult.Ok(enriquecido),
+            RoutingKeyResult = RoutingKeyResult.Valido("CAJA-01")
+        };
+
+        var cajaCache = new FakeCajaCache();
+        cajaCache.Registrar(_tenant.Id, "CAJA-01", new CajaRegistrada
+        {
+            TenantId = _tenant.Id,
+            Identificador = "CAJA-01",
+            CallbackUrl = "https://caja1.cfargotunnel.com/callback",
+            UltimaVez = DateTime.UtcNow
+        });
+
+        var capturingForwarder = new CapturingForwardingService();
+        var worker = BuildWorker(provider: provider, forwarder: capturingForwarder, cajaCache: cajaCache);
+        var webhook = BuildWebhookProveedor(rawPayload);
+
+        await worker.ProcesarWebhookParaTestAsync(webhook, CancellationToken.None);
+
+        // EnriquecerAsync SÍ fue llamado (REQ-4 esc. 1)
+        Assert.True(provider.EnriquecimientoLlamado,
+            "EnriquecerAsync DEBE llamarse en flujo payment");
+
+        // Y el forward ocurrió
+        Assert.Single(capturingForwarder.Llamadas);
+    }
+
+    /// <summary>
+    /// W6: No-regresión payment — flujo existente 5.6-5.11 sigue verde con el fake extendido.
+    /// Verifica que la bifurcación no rompe los escenarios payment ya testeados.
+    /// </summary>
+    [Fact]
+    public async Task Worker_Payment_NoRegresion_RoutingKeyInvalida_DeadLetter()
+    {
+        var enriquecido = """{"id":88,"status":"approved"}"""; // sin external_reference
+        var provider = new FakeProviderForWorker("mercadopago")
+        {
+            RutearSinEnriquecimientoValor = false,
+            EnriquecimientoResult = EnrichmentResult.Ok(enriquecido),
+            RoutingKeyResult = RoutingKeyResult.Invalid
+        };
+
+        var capturingForwarder = new CapturingForwardingService();
+        var worker = BuildWorker(provider: provider, forwarder: capturingForwarder);
+        var webhook = BuildWebhookProveedor();
+
+        await worker.ProcesarWebhookParaTestAsync(webhook, CancellationToken.None);
+
+        Assert.Empty(capturingForwarder.Llamadas);
+
+        using var scope = _sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var log = await db.DeliveryLogs.FirstOrDefaultAsync(l => l.WebhookEventId == webhook.EventId);
+        Assert.NotNull(log);
+        Assert.Equal(DeliveryStatus.DeadLetter, log!.Status);
+    }
 }
 
 // ─── Fakes para tests del worker ──────────────────────────────────────────────
@@ -829,12 +1037,17 @@ public class FakeProviderForWorker : IWebhookProvider
 {
     public string Nombre { get; }
     public bool EnriquecimientoLlamado { get; private set; }
+    public bool RutearSinEnriquecimientoLlamado { get; private set; }
 
     public EnrichmentResult EnriquecimientoResult { get; set; } =
         EnrichmentResult.Ok("""{"id":1,"external_reference":"CAJA-01__0001"}""");
 
     public RoutingKeyResult RoutingKeyResult { get; set; } =
         RoutingKeyResult.Valido("CAJA-01");
+
+    // Nuevos campos para tests de flujo order (WU-2)
+    public bool RutearSinEnriquecimientoValor { get; set; } = false;
+    public RoutingKeyResult RoutingKeyDesdeNotificacionResult { get; set; } = RoutingKeyResult.Invalid;
 
     public FakeProviderForWorker(string nombre) { Nombre = nombre; }
 
@@ -850,6 +1063,15 @@ public class FakeProviderForWorker : IWebhookProvider
     }
 
     public RoutingKeyResult ExtraerRoutingKey(string payloadEnriquecido) => RoutingKeyResult;
+
+    public bool RutearSinEnriquecimiento(string payloadNotificacion)
+    {
+        RutearSinEnriquecimientoLlamado = true;
+        return RutearSinEnriquecimientoValor;
+    }
+
+    public RoutingKeyResult ExtraerRoutingKeyDesdeNotificacion(string payloadNotificacion)
+        => RoutingKeyDesdeNotificacionResult;
 }
 
 /// <summary>

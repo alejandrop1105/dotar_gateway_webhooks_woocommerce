@@ -189,25 +189,83 @@ public class MercadoPagoProvider : IWebhookProvider
             if (prop.ValueKind != JsonValueKind.String)
                 return RoutingKeyResult.Invalid;
 
-            var externalRef = prop.GetString();
-            if (string.IsNullOrEmpty(externalRef))
-                return RoutingKeyResult.Invalid;
-
-            var partes = externalRef.Split("__", 2);
-            if (partes.Length < 2)
-                return RoutingKeyResult.Invalid;
-
-            var identificador = partes[0];
-            if (string.IsNullOrEmpty(identificador))
-                return RoutingKeyResult.Invalid;
-
-            return RoutingKeyResult.Valido(identificador);
+            return ParsearRoutingKey(prop.GetString());
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Payload enriquecido MP no es JSON válido al extraer routing key");
             return RoutingKeyResult.Invalid;
         }
+    }
+
+    /// <inheritdoc/>
+    /// Retorna true si el campo top-level "type" del payload es "order" (OrdinalIgnoreCase).
+    /// JSON inválido o campo ausente → false (conservador; preserva el flujo payment).
+    public bool RutearSinEnriquecimiento(string payloadNotificacion)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadNotificacion);
+            if (!doc.RootElement.TryGetProperty("type", out var prop))
+                return false;
+
+            if (prop.ValueKind != JsonValueKind.String)
+                return false;
+
+            return string.Equals(prop.GetString(), "order", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    /// Lee data.external_reference (campo anidado) del payload RAW.
+    /// Aplica Split("__", 2)[0]. Mismas reglas de validación que ExtraerRoutingKey.
+    public RoutingKeyResult ExtraerRoutingKeyDesdeNotificacion(string payloadNotificacion)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadNotificacion);
+            if (!doc.RootElement.TryGetProperty("data", out var data))
+                return RoutingKeyResult.Invalid;
+
+            if (!data.TryGetProperty("external_reference", out var prop))
+                return RoutingKeyResult.Invalid;
+
+            if (prop.ValueKind != JsonValueKind.String)
+                return RoutingKeyResult.Invalid;
+
+            return ParsearRoutingKey(prop.GetString());
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Payload de notificación MP no es JSON válido al extraer routing key desde notificación");
+            return RoutingKeyResult.Invalid;
+        }
+    }
+
+    // ─── Helper privado compartido de routing key ──────────────────────────
+
+    /// <summary>
+    /// Parsea externalRef con Split("__", 2)[0]. Sin separador o parte izquierda vacía → Invalid.
+    /// Compartido por ExtraerRoutingKey (flujo payment, raíz) y ExtraerRoutingKeyDesdeNotificacion (flujo order, data anidado).
+    /// </summary>
+    private static RoutingKeyResult ParsearRoutingKey(string? externalRef)
+    {
+        if (string.IsNullOrEmpty(externalRef))
+            return RoutingKeyResult.Invalid;
+
+        var partes = externalRef.Split("__", 2);
+        if (partes.Length < 2)
+            return RoutingKeyResult.Invalid;
+
+        var identificador = partes[0];
+        if (string.IsNullOrEmpty(identificador))
+            return RoutingKeyResult.Invalid;
+
+        return RoutingKeyResult.Valido(identificador);
     }
 
     // ─── Helpers privados para leer CredencialesCifradas ───────────────────
