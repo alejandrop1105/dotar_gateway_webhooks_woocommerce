@@ -302,6 +302,10 @@ public class WebhookDispatcherWorker : BackgroundService
         else
         {
             // Rama payment / default: flujo de enriquecimiento existente (intacto)
+            _systemLog.Info(SystemLogCategory.Worker,
+                $"Notificación MP tipo 'payment' detectada — modo con_enriquecimiento.",
+                eventId: eventId,
+                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; modo=con_enriquecimiento");
 
             // 3a. Extraer idEvento del payload (ej. data.id en MP).
             //     Si no se puede extraer, dead-letter inmediato sin llamar EnriquecerAsync con id vacío.
