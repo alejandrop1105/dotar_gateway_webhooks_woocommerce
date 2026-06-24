@@ -61,4 +61,18 @@ public interface IWebhookProvider
     /// Sin "__", parte izquierda vacía, o campo ausente → RoutingKeyResult.Invalid.
     /// </summary>
     RoutingKeyResult ExtraerRoutingKey(string payloadEnriquecido);
+
+    /// <summary>
+    /// Indica si la notificación debe rutearse sin enriquecimiento (flujo directo).
+    /// MP: retorna true si el campo top-level "type" es "order" (OrdinalIgnoreCase).
+    /// JSON inválido o campo ausente → false (conservador; preserva el flujo payment).
+    /// </summary>
+    bool RutearSinEnriquecimiento(string payloadNotificacion);
+
+    /// <summary>
+    /// Extrae la routing key directamente desde el payload RAW de la notificación
+    /// (para el flujo order, sin enriquecimiento). MP: lee data.external_reference (campo anidado).
+    /// Aplica Split("__", 2)[0]. Mismas reglas de validación que ExtraerRoutingKey.
+    /// </summary>
+    RoutingKeyResult ExtraerRoutingKeyDesdeNotificacion(string payloadNotificacion);
 }
