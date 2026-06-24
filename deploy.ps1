@@ -29,17 +29,24 @@
 .PARAMETER SkipDeploy
     Solo bumpea y commitea version.json; no ejecuta docker compose.
 
+.PARAMETER Novedades
+    Lista de novedades en lenguaje de negocio para mostrar en /historial-deploys.
+    Cada elemento es una cadena descriptiva orientada al operador o al usuario final.
+    Ejemplo: .\deploy.ps1 -Novedades "Se habilitó el pago con QR","Mejora de rendimiento en logs"
+
 .EXAMPLE
     .\deploy.ps1
     .\deploy.ps1 -SkipDeploy
     .\deploy.ps1 -Force
+    .\deploy.ps1 -Novedades "Nueva feature X","Corrección en Y"
 #>
 [CmdletBinding()]
 param(
     [string]$Context = "laboratorio",
     [string]$DeployHost = "lab-oficina",
     [switch]$Force,
-    [switch]$SkipDeploy
+    [switch]$SkipDeploy,
+    [string[]]$Novedades = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -123,6 +130,7 @@ if ($didBump) {
         bumpType   = $bumpType
         gitCommit  = $currentCommit
         changes    = $changelog
+        novedades  = @($Novedades)
     }
     $versionData.current = $newVersion
     $versionData.history = @($newEntry) + @($versionData.history)

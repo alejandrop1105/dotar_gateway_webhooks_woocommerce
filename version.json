@@ -8,7 +8,12 @@
       "host": "lab-oficina",
       "bumpType": "minor",
       "gitCommit": "c9f4c3b9e5ab5cede7a86ffb20a0c78e1df29529",
-      "changes": "[*] Merge pull request #9 from alejandrop1105/feature/ruteo-mp-order-sin-enriquecimiento | [FIX] fix(ruteo-mp): loguear tipo en rama payment para observabilidad simétrica | [CHORE] docs(contrato-boundary): sección B condicional por tipo, bump 1.0→1.1 | [FEAT] feat(ruteo-mp): bifurcación order/payment en WebhookDispatcherWorker | [FEAT] feat(ruteo-mp): agregar RutearSinEnriquecimiento y ExtraerRoutingKeyDesdeNotificacion al provider | [CHORE] docs(sdd): planificación del change ruteo-mp-order-sin-enriquecimiento | [FIX] fix(ruteo): normalizar data.id a minúsculas en firma x-signature de MercadoPago | [CHORE] chore(release): bump version to 1.3.3"
+      "changes": "[*] Merge pull request #9 from alejandrop1105/feature/ruteo-mp-order-sin-enriquecimiento | [FIX] fix(ruteo-mp): loguear tipo en rama payment para observabilidad simétrica | [CHORE] docs(contrato-boundary): sección B condicional por tipo, bump 1.0→1.1 | [FEAT] feat(ruteo-mp): bifurcación order/payment en WebhookDispatcherWorker | [FEAT] feat(ruteo-mp): agregar RutearSinEnriquecimiento y ExtraerRoutingKeyDesdeNotificacion al provider | [CHORE] docs(sdd): planificación del change ruteo-mp-order-sin-enriquecimiento | [FIX] fix(ruteo): normalizar data.id a minúsculas en firma x-signature de MercadoPago | [CHORE] chore(release): bump version to 1.3.3",
+      "novedades": [
+        "Los pagos presenciales (Point) de MercadoPago ahora se procesan correctamente y llegan a tu sistema. Antes fallaban y se perdían.",
+        "Se corrigió el rechazo de pagos cuyo identificador contenía letras (problema en la validación de firma).",
+        "El procesamiento es más rápido: la notificación se rutea directo, sin consultas extra a MercadoPago."
+      ]
     },
     {
       "version": "1.3.3",
