@@ -1,6 +1,6 @@
 # Contrato del boundary — Ruteo de webhooks multi-tenant (Gateway ↔ ERP DEAM Gestión)
 
-**Versión**: 1.0  
+**Versión**: 1.1  
 **Estado**: Publicado  
 **Propietario**: Dotar Gateway  
 **Audiencia**: Equipo ERP DEAM Gestión  
@@ -85,18 +85,38 @@ El ERP debe re-registrar la caja en los siguientes casos:
 
 ## B. Payload reenviado a la caja
 
-Cuando MercadoPago notifica al Gateway sobre un pago, el Gateway:
+Cuando MercadoPago notifica al Gateway, el flujo varía según el campo `type` del payload:
+
+### Flujo según tipo de notificación
+
+| `type` | Descripción | Fuente de `external_reference` | Llamada a la API de MP |
+|--------|-------------|-------------------------------|------------------------|
+| `order` | Notificación Point / orden de pago | `data.external_reference` del payload RAW | **No** — ruteo directo sin enriquecimiento |
+| `payment` (o ausente) | Notificación de pago estándar | campo raíz `external_reference` del payload enriquecido | Sí — GET `/v1/payments/{id}` |
+
+**Flujo `type=order`** (sin enriquecimiento):
+1. Valida la firma entrante de MercadoPago.
+2. Lee `data.external_reference` del payload RAW (campo anidado dentro de `data`).
+3. Extrae el `identificador` de caja con `Split("__", 2)[0]`.
+4. Reenvía el payload **RAW** al `callbackUrl` registrado — sin ninguna llamada a la API de MP.
+
+**Flujo `type=payment`** (con enriquecimiento):
 1. Valida la firma entrante de MercadoPago.
 2. Enriquece con la API de MP (GET `/v1/payments/{id}`).
-3. Extrae el `identificador` de caja desde `external_reference`.
-4. Reenvía el payload **RAW** (verbatim, sin modificaciones) al `callbackUrl` registrado.
+3. Lee `external_reference` desde la raíz del payload enriquecido.
+4. Extrae el `identificador` de caja con `Split("__", 2)[0]`.
+5. Reenvía el payload **RAW** al `callbackUrl` registrado.
 
-### Forma del reenvío
+### Forma del reenvío (ambos flujos)
 
 - **Body**: el payload RAW original de MercadoPago (no el payload enriquecido). Minimiza PII.  
-  Ejemplo de payload entrante de MP:
+  Ejemplo de payload entrante de MP (type=payment):
   ```json
   { "type": "payment", "data": { "id": "77777" } }
+  ```
+  Ejemplo de payload entrante de MP (type=order):
+  ```json
+  { "type": "order", "data": { "id": "ORD-01KVX5", "external_reference": "CAJA-01__260624140146" } }
   ```
 - **Método HTTP**: `POST`.
 
@@ -226,10 +246,17 @@ ERP (arranque)                          Gateway                    MercadoPago
      │   external_reference = "CAJA-01__ORD-42"                        │
      │                                      │                           │
      │                                      │◄── POST /webhook/mp ─────│
-     │                                      │    (notificación de pago) │
+     │                                      │    (notificación MP)      │
      │                                      │                           │
-     │                                      │── GET /v1/payments/... ──►│
-     │                                      │◄── { "external_reference": "CAJA-01__ORD-42" } ──│
+     │                                      │  [bifurcación por type]   │
+     │                                      │                           │
+     │                         type=payment:│── GET /v1/payments/... ──►│
+     │                                      │◄─ { "external_reference": │
+     │                                      │    "CAJA-01__ORD-42" } ───│
+     │                                      │                           │
+     │                          type=order: │  (sin llamada a MP API)   │
+     │                                      │  lee data.external_reference│
+     │                                      │  del payload RAW          │
      │                                      │                           │
      │◄── POST callbackUrl ─────────────────│                           │
      │    X-Caja-Signature: <hmac>          │                           │
