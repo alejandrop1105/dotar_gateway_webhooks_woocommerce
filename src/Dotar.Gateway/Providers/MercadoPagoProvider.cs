@@ -172,8 +172,9 @@ public class MercadoPagoProvider : IWebhookProvider
     }
 
     /// <inheritdoc/>
-    /// Extrae routing key: external_reference.Split("::", 2)[0].
-    /// Sin "::", parte izquierda vacía, o campo ausente → Invalid.
+    /// Extrae routing key: external_reference.Split("__", 2)[0].
+    /// Sin "__", parte izquierda vacía, o campo ausente → Invalid.
+    /// El identificador conserva guiones y guion bajo simple (ej. 003-CAJA_2); el separador es "__" doble.
     public RoutingKeyResult ExtraerRoutingKey(string payloadEnriquecido)
     {
         try
@@ -189,7 +190,7 @@ public class MercadoPagoProvider : IWebhookProvider
             if (string.IsNullOrEmpty(externalRef))
                 return RoutingKeyResult.Invalid;
 
-            var partes = externalRef.Split("::", 2);
+            var partes = externalRef.Split("__", 2);
             if (partes.Length < 2)
                 return RoutingKeyResult.Invalid;
 

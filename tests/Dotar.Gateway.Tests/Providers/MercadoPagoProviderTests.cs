@@ -214,7 +214,7 @@ public class MercadoPagoProviderTests
     public void ExtraerRoutingKey_ConSeparador_RetornaParteIzquierda()
     {
         var sut = BuildSut();
-        var payload = "{\"external_reference\":\"CAJA-01::00001234\"}";
+        var payload = "{\"external_reference\":\"CAJA-01__00001234\"}";
 
         var resultado = sut.ExtraerRoutingKey(payload);
 
@@ -226,12 +226,26 @@ public class MercadoPagoProviderTests
     public void ExtraerRoutingKey_IdentificadorConGuiones_RetornaIdentificadorCompleto()
     {
         var sut = BuildSut();
-        var payload = "{\"external_reference\":\"CAJA-ESPECIAL-01::comprobante-999\"}";
+        var payload = "{\"external_reference\":\"CAJA-ESPECIAL-01__comprobante-999\"}";
 
         var resultado = sut.ExtraerRoutingKey(payload);
 
         Assert.True(resultado.EsValido);
         Assert.Equal("CAJA-ESPECIAL-01", resultado.RoutingKey);
+    }
+
+    [Fact]
+    public void ExtraerRoutingKey_IdentificadorConGuionBajoSimple_RetornaIdentificadorCompleto()
+    {
+        // El identificador real del ERP conserva su guion bajo simple: 003-CAJA_2.
+        // El separador "__" (doble) no debe partir dentro del identificador.
+        var sut = BuildSut();
+        var payload = "{\"external_reference\":\"003-CAJA_2__260624095836\"}";
+
+        var resultado = sut.ExtraerRoutingKey(payload);
+
+        Assert.True(resultado.EsValido);
+        Assert.Equal("003-CAJA_2", resultado.RoutingKey);
     }
 
     [Fact]
@@ -250,7 +264,7 @@ public class MercadoPagoProviderTests
     public void ExtraerRoutingKey_ParteIzquierdaVacia_RetornaInvalido()
     {
         var sut = BuildSut();
-        var payload = "{\"external_reference\":\"::comprobante\"}";
+        var payload = "{\"external_reference\":\"__comprobante\"}";
 
         var resultado = sut.ExtraerRoutingKey(payload);
 
@@ -284,7 +298,7 @@ public class MercadoPagoProviderTests
     [Fact]
     public async Task EnriquecerAsync_Respuesta200_RetornaPayloadEnriquecido()
     {
-        var payloadRespuesta = "{\"id\":456,\"external_reference\":\"CAJA-01::00001\",\"status\":\"approved\"}";
+        var payloadRespuesta = "{\"id\":456,\"external_reference\":\"CAJA-01__00001\",\"status\":\"approved\"}";
         var handler = new FakeResponseHandler(HttpStatusCode.OK, payloadRespuesta);
         var sut = BuildSut(handler);
         var config = BuildConfig(accessToken: "TEST_TOKEN", baseUrl: "https://api.mercadopago.com");

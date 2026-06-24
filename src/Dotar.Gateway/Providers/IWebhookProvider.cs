@@ -58,7 +58,7 @@ public interface IWebhookProvider
 
     /// <summary>
     /// Extrae la routing key del payload enriquecido para localizar la caja de destino.
-    /// Sin "::", parte izquierda vacía, o campo ausente → RoutingKeyResult.Invalid.
+    /// Sin "__", parte izquierda vacía, o campo ausente → RoutingKeyResult.Invalid.
     /// </summary>
     RoutingKeyResult ExtraerRoutingKey(string payloadEnriquecido);
 }

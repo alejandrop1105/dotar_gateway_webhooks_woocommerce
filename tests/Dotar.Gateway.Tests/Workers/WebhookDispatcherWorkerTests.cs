@@ -160,7 +160,7 @@ public class WebhookDispatcherWorkerTests : IDisposable
         // 5.6: proveedor enriquece + caja encontrada →
         // forward a CallbackUrl con X-Caja-Signature (HMAC-SHA256 hex lowercase del RAW)
         var rawPayload = """{"topic":"payment","id":"12345"}""";
-        var enriquecido = """{"id":12345,"external_reference":"CAJA-01::00001234","status":"approved"}""";
+        var enriquecido = """{"id":12345,"external_reference":"CAJA-01__00001234","status":"approved"}""";
 
         var provider = new FakeProviderForWorker("mercadopago")
         {
@@ -207,7 +207,7 @@ public class WebhookDispatcherWorkerTests : IDisposable
     public async Task Worker_CajaNoEncontrada_DeadLetter()
     {
         // 5.7: enriquecimiento ok, routing key válida pero caja no en padrón → DeadLetter
-        var enriquecido = """{"id":99,"external_reference":"CAJA-NOEXI::00001","status":"approved"}""";
+        var enriquecido = """{"id":99,"external_reference":"CAJA-NOEXI__00001","status":"approved"}""";
         var provider = new FakeProviderForWorker("mercadopago")
         {
             EnriquecimientoResult = EnrichmentResult.Ok(enriquecido),
@@ -308,7 +308,7 @@ public class WebhookDispatcherWorkerTests : IDisposable
     public async Task Worker_RetryAuto_IncludeXCajaSignature()
     {
         var rawPayload = """{"topic":"payment","id":"RETRY-01"}""";
-        var enriquecido = """{"id":999,"external_reference":"CAJA-01::RETRY-01","status":"approved"}""";
+        var enriquecido = """{"id":999,"external_reference":"CAJA-01__RETRY-01","status":"approved"}""";
 
         var provider = new FakeProviderForWorker("mercadopago")
         {
@@ -373,7 +373,7 @@ public class WebhookDispatcherWorkerTests : IDisposable
     public async Task Worker_FlujoCajaCallback_UsaClienteCorrecto()
     {
         var rawPayload = """{"topic":"payment","id":"CB-01"}""";
-        var enriquecido = """{"id":1,"external_reference":"CAJA-01::CB-01","status":"approved"}""";
+        var enriquecido = """{"id":1,"external_reference":"CAJA-01__CB-01","status":"approved"}""";
 
         var provider = new FakeProviderForWorker("mercadopago")
         {
@@ -456,7 +456,7 @@ public class WebhookDispatcherWorkerTests : IDisposable
     public async Task Worker_InvalidatePipelineCacheInt_NoBorraCBExistente()
     {
         // Crear un CB vía forward exitoso (activa ObtenerPipelineCb internamente)
-        var enriquecido = """{"id":1,"external_reference":"CAJA-01::001","status":"approved"}""";
+        var enriquecido = """{"id":1,"external_reference":"CAJA-01__001","status":"approved"}""";
         var provider = new FakeProviderForWorker("mercadopago")
         {
             EnriquecimientoResult = EnrichmentResult.Ok(enriquecido),
@@ -534,7 +534,7 @@ public class WebhookDispatcherWorkerTests : IDisposable
     public async Task Worker_RetryAuto_FlujoCaja_UsaClienteCajaCallback()
     {
         var rawPayload = """{"topic":"payment","id":"RETRY-CB-01"}""";
-        var enriquecido = """{"id":5000,"external_reference":"CAJA-01::RETRY-CB-01","status":"approved"}""";
+        var enriquecido = """{"id":5000,"external_reference":"CAJA-01__RETRY-CB-01","status":"approved"}""";
 
         var provider = new FakeProviderForWorker("mercadopago")
         {
@@ -682,7 +682,7 @@ public class WebhookDispatcherWorkerTests : IDisposable
             db.SaveChanges();
         }
 
-        var enriquecido = """{"id":9999,"external_reference":"CAJA-02::0001","status":"approved"}""";
+        var enriquecido = """{"id":9999,"external_reference":"CAJA-02__0001","status":"approved"}""";
         var provider = new FakeProviderForWorker("mercadopago")
         {
             EnriquecimientoResult = EnrichmentResult.Ok(enriquecido),
@@ -761,14 +761,14 @@ public class WebhookDispatcherWorkerTests : IDisposable
     public async Task Worker_DeadLetterNoBloqueaProcesamiento()
     {
         // 5.11: webhook A dead-letter, webhook B se procesa correctamente
-        var enriquecidoA = """{"id":10,"external_reference":"CAJA-NOEXI::0001","status":"approved"}""";
+        var enriquecidoA = """{"id":10,"external_reference":"CAJA-NOEXI__0001","status":"approved"}""";
         var providerA = new FakeProviderForWorker("mercadopago")
         {
             EnriquecimientoResult = EnrichmentResult.Ok(enriquecidoA),
             RoutingKeyResult = RoutingKeyResult.Valido("CAJA-NOEXI")
         };
 
-        var enriquecidoB = """{"id":20,"external_reference":"CAJA-01::0002","status":"approved"}""";
+        var enriquecidoB = """{"id":20,"external_reference":"CAJA-01__0002","status":"approved"}""";
         var providerB = new FakeProviderForWorker("mercadopago")
         {
             EnriquecimientoResult = EnrichmentResult.Ok(enriquecidoB),
@@ -831,7 +831,7 @@ public class FakeProviderForWorker : IWebhookProvider
     public bool EnriquecimientoLlamado { get; private set; }
 
     public EnrichmentResult EnriquecimientoResult { get; set; } =
-        EnrichmentResult.Ok("""{"id":1,"external_reference":"CAJA-01::0001"}""");
+        EnrichmentResult.Ok("""{"id":1,"external_reference":"CAJA-01__0001"}""");
 
     public RoutingKeyResult RoutingKeyResult { get; set; } =
         RoutingKeyResult.Valido("CAJA-01");

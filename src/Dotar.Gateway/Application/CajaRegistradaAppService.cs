@@ -51,8 +51,8 @@ public sealed class CajaRegistradaAppService
         if (string.IsNullOrWhiteSpace(identificador))
             return Result<CajaDto>.Validation("El campo 'identificador' es obligatorio.");
 
-        if (identificador.Contains("::"))
-            return Result<CajaDto>.Validation("El 'identificador' no puede contener '::'.");
+        if (identificador.Contains("__"))
+            return Result<CajaDto>.Validation("El 'identificador' no puede contener '__'.");
 
         if (identificador.Length > 100)
             return Result<CajaDto>.Validation(

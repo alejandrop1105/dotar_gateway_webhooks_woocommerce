@@ -3,7 +3,7 @@ namespace Dotar.Gateway.Domain.Entities;
 /// <summary>
 /// Registro de una caja (punto de venta) de un tenant.
 /// El identificador es OPACO: el ERP lo genera libremente, el gateway lo compara EXACTO.
-/// No puede contener "::".
+/// No puede contener "__" (separador del external_reference de MercadoPago).
 /// </summary>
 public class CajaRegistrada
 {
@@ -15,7 +15,7 @@ public class CajaRegistrada
 
     /// <summary>
     /// Identificador opaco de la caja. String arbitraria (puede tener guiones, etc.)
-    /// sin "::" (esa restricción se valida en el endpoint). Max 100 chars.
+    /// sin "__" (esa restricción se valida en el endpoint). Max 100 chars.
     /// </summary>
     public string Identificador { get; set; } = string.Empty;
 

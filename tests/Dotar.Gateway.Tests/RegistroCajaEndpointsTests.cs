@@ -172,12 +172,12 @@ public class RegistroCajaEndpointsTests : IClassFixture<RegistroCajaFactory>, IA
     }
 
     [Fact]
-    public async Task RegistroCaja_IdentificadorConDobleColon_Retorna400()
+    public async Task RegistroCaja_IdentificadorConDobleGuionBajo_Retorna400()
     {
         var (tenant, secret) = await GetTenantAsync();
         var client = BuildClient();
 
-        var body = """{"identificador":"CAJA::01","callbackUrl":"https://tunel.cfargotunnel.com/cb"}""";
+        var body = """{"identificador":"CAJA__01","callbackUrl":"https://tunel.cfargotunnel.com/cb"}""";
         var bodyBytes = Encoding.UTF8.GetBytes(body);
         var hmac = ComputarHmac(secret, bodyBytes);
 

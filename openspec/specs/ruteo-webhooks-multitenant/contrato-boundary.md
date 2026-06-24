@@ -38,7 +38,7 @@ POST /registro-caja/{slug}
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `identificador` | string | Identificador opaco de la caja. Generado libremente por el ERP. Puede contener letras, números y guiones. **Restricción única: no puede contener `::`**. Máximo 100 caracteres. |
+| `identificador` | string | Identificador opaco de la caja. Generado libremente por el ERP. Puede contener letras, números, guiones y guion bajo simple (ej. `003-CAJA_2`). **Restricción única: no puede contener `__`** (doble guion bajo, reservado como separador). Máximo 100 caracteres. |
 | `callbackUrl` | string | URL de callback del ERP. Debe ser `https://` y coincidir con la allowlist del tenant (`*.cfargotunnel.com` o `*.dotarsoluciones.com`). |
 
 ### Firma de autenticación
@@ -70,7 +70,7 @@ signature = hmac.new(secret, body, hashlib.sha256).hexdigest()
 | Registro nuevo exitoso | `200 OK` | Caja registrada. |
 | Re-registro (mismo identificador) | `200 OK` | Idempotente: actualiza `callbackUrl`. Sin duplicados. |
 | Firma inválida o ausente | `401 Unauthorized` | No se persiste ningún dato. |
-| `identificador` contiene `::` | `400 Bad Request` | Campo inválido. |
+| `identificador` contiene `__` | `400 Bad Request` | Campo inválido. |
 | `callbackUrl` con `http://` | `400 Bad Request` | Solo se acepta `https://`. |
 | `callbackUrl` fuera de allowlist | `400 Bad Request` | Dominio no permitido. |
 | Slug de tenant no encontrado | `404 Not Found` | Slug incorrecto. |
@@ -134,9 +134,9 @@ El secret es el mismo `WebhookSecret` del tenant para ambas direcciones: registr
 
 ### Estructura
 
-El identificador es **opaco** para el Gateway: una string no vacía que **no contiene `::`**.
+El identificador es **opaco** para el Gateway: una string no vacía que **no contiene `__`**.
 
-Regex de validación: `^(?!.*::).+$`
+Regex de validación: `^(?!.*__).+$`
 
 El Gateway:
 - Persiste el identificador tal cual lo registró el ERP.
@@ -148,33 +148,35 @@ El Gateway:
 Cuando el ERP genera una orden en MercadoPago, debe construir el `external_reference` así:
 
 ```
-external_reference = "{identificadorCaja}::{comprobante}"
+external_reference = "{identificadorCaja}__{comprobante}"
 ```
+
+> El separador es `__` (doble guion bajo), no `::`. MercadoPago `/v1/orders` valida `external_reference` contra `^[A-Za-z0-9_-]{1,64}$` y rechaza `:`; `__` es admitido y el ERP garantiza que no aparece dentro de los campos.
 
 | Parte | Descripción |
 |-------|-------------|
-| `{identificadorCaja}` | Exactamente el mismo `identificador` registrado en el Gateway (sección A). Sin modificaciones. |
-| `::` | Separador obligatorio. Solo debe aparecer una vez; el comprobante puede contener cualquier carácter. |
-| `{comprobante}` | Libre. Número de orden, factura, o cualquier referencia interna del ERP. No lo usa el Gateway para rutear. |
+| `{identificadorCaja}` | Exactamente el mismo `identificador` registrado en el Gateway (sección A). Sin modificaciones. Puede contener guion bajo simple. |
+| `__` | Separador obligatorio. Solo debe aparecer una vez; el comprobante se sanitiza a `[A-Za-z0-9]`. |
+| `{comprobante}` | Libre dentro de lo que admite MP. Número de orden, factura, o cualquier referencia interna del ERP. No lo usa el Gateway para rutear. |
 
 Ejemplos válidos de `external_reference`:
-- `CAJA-01::ORD-2024-001`
-- `CAJA-ESPECIAL-Norte::FV00123`
-- `C1::1`
+- `CAJA-01__ORD-2024-001`
+- `003-CAJA_2__260624095836`
+- `C1__1`
 
 Ejemplos **inválidos** (causan dead-letter en el Gateway):
-- `CAJA-01` (sin `::` → Gateway no puede extraer el identificador)
-- `::ORD-001` (parte izquierda vacía)
-- `CAJA::01::ORD` (ambigüedad — se toma `CAJA` como identificador, `01::ORD` como comprobante, pero el identificador registrado debe ser exactamente `CAJA`)
+- `CAJA-01` (sin `__` → Gateway no puede extraer el identificador)
+- `__ORD-001` (parte izquierda vacía)
+- `CAJA__01__ORD` (ambigüedad — se toma `CAJA` como identificador, `01__ORD` como comprobante, pero el identificador registrado debe ser exactamente `CAJA`)
 
 ### Procesamiento en el Gateway
 
 El Gateway extrae la routing key con:
 ```
-external_reference.Split("::", 2) → parte [0] = identificadorCaja
+external_reference.Split("__", 2) → parte [0] = identificadorCaja
 ```
 
-Si no hay `::` o la parte izquierda es vacía → el webhook va a dead-letter (se registra en logs, no se reintenta).
+Si no hay `__` o la parte izquierda es vacía → el webhook va a dead-letter (se registra en logs, no se reintenta).
 
 ---
 
@@ -198,7 +200,7 @@ Body: { "identificador": "<id-opaco>", "callbackUrl": "https://<tunel>/webhook" 
 
 - Fijar el campo `external_reference` de la preferencia de pago con el formato:
   ```
-  external_reference = "{identificadorCaja}::{comprobante}"
+  external_reference = "{identificadorCaja}__{comprobante}"
   ```
 - Usar **exactamente** el mismo `identificador` que se registró en el Gateway.
 
@@ -221,13 +223,13 @@ ERP (arranque)                          Gateway                    MercadoPago
      │◄─ 200 OK ────────────────────────────│                           │
      │                                      │                           │
      │── Crear orden MP ──────────────────────────────────────────────►│
-     │   external_reference = "CAJA-01::ORD-42"                        │
+     │   external_reference = "CAJA-01__ORD-42"                        │
      │                                      │                           │
      │                                      │◄── POST /webhook/mp ─────│
      │                                      │    (notificación de pago) │
      │                                      │                           │
      │                                      │── GET /v1/payments/... ──►│
-     │                                      │◄── { "external_reference": "CAJA-01::ORD-42" } ──│
+     │                                      │◄── { "external_reference": "CAJA-01__ORD-42" } ──│
      │                                      │                           │
      │◄── POST callbackUrl ─────────────────│                           │
      │    X-Caja-Signature: <hmac>          │                           │
@@ -251,6 +253,6 @@ ERP (arranque)                          Gateway                    MercadoPago
 | Header de firma (ambas direcciones) | `X-Caja-Signature` |
 | Algoritmo de firma | HMAC-SHA256 |
 | Codificación del resultado | Hex lowercase (sin prefijo `sha256=`) |
-| Separador en `external_reference` | `::` (doble dos puntos) |
+| Separador en `external_reference` | `__` (doble guion bajo) |
 | Cuerpo reenviado por el Gateway | RAW de MercadoPago (no enriquecido) |
 | Secret usado en ambas direcciones | `WebhookSecret` del tenant |

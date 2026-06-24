@@ -136,7 +136,7 @@ public class DescifradoCredencialesWorkerTests : IDisposable
         HttpRequestMessage? requestCapturado = null;
         var handlerFake = new CapturingAuthorizationHandler(
             HttpStatusCode.OK,
-            """{"id":12345,"external_reference":"CAJA-01::00001","status":"approved"}""",
+            """{"id":12345,"external_reference":"CAJA-01__00001","status":"approved"}""",
             r => requestCapturado = r);
 
         var mpProvider = new MercadoPagoProvider(
@@ -231,7 +231,7 @@ public class DescifradoCredencialesWorkerTests : IDisposable
         HttpRequestMessage? requestCapturado = null;
         var handlerFake = new CapturingAuthorizationHandler(
             HttpStatusCode.OK,
-            """{"id":1,"external_reference":"CAJA-01::001","status":"approved"}""",
+            """{"id":1,"external_reference":"CAJA-01__001","status":"approved"}""",
             r => requestCapturado = r);
 
         var mpProvider = new MercadoPagoProvider(
