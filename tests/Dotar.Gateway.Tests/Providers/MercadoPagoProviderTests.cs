@@ -151,6 +151,34 @@ public class MercadoPagoProviderTests
     }
 
     [Fact]
+    public void ValidarFirmaEntrante_DataIdAlfanumericoMayusculas_FirmaConIdEnMinusculas_RetornaTrue()
+    {
+        // MP firma el data.id alfanumérico en minúsculas. El body trae el id en
+        // MAYÚSCULAS (ej. "ORD01KVX..."), pero la firma v1 se calcula con el manifest
+        // en minúsculas. El provider debe normalizar antes de comparar.
+        var sut = BuildSut();
+        var config = BuildConfig(signingSecret: "test-secret-123");
+
+        var dataIdMayus = "ORD01KVX5766GAJZRHYQSJY9MKXVR";
+        var requestId = "req-abc";
+        var ts = "1782316274";
+        // MP arma el manifest con el id en minúsculas:
+        var manifestMinus = $"id:{dataIdMayus.ToLowerInvariant()};request-id:{requestId};ts:{ts};";
+        var v1 = ComputeHmacHex(manifestMinus, "test-secret-123");
+
+        var body = Encoding.UTF8.GetBytes($"{{\"data\":{{\"id\":\"{dataIdMayus}\"}}}}");
+        var headers = BuildHeaders(new Dictionary<string, string>
+        {
+            ["x-signature"] = BuildXSignature(ts, v1),
+            ["x-request-id"] = requestId
+        });
+
+        var resultado = sut.ValidarFirmaEntrante(headers, body, config);
+
+        Assert.True(resultado);
+    }
+
+    [Fact]
     public void ValidarFirmaEntrante_FirmaInvalida_RetornaFalse()
     {
         var sut = BuildSut();

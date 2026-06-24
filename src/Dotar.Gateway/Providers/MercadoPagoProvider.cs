@@ -100,9 +100,12 @@ public class MercadoPagoProvider : IWebhookProvider
             }
 
             // 4. Construir manifest (omitir campos ausentes)
+            // MercadoPago firma el data.id en minúsculas cuando es alfanumérico
+            // (ej. "ORD01KVX..." → "ord01kvx..."). Los numéricos no se ven afectados.
+            // Si no se normaliza, el HMAC nunca coincide con el v1 de MP.
             var manifest = new StringBuilder();
             if (!string.IsNullOrEmpty(dataId))
-                manifest.Append($"id:{dataId};");
+                manifest.Append($"id:{dataId.ToLowerInvariant()};");
 
             var requestId = headers["x-request-id"].FirstOrDefault();
             if (!string.IsNullOrEmpty(requestId))
