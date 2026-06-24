@@ -128,8 +128,28 @@
                                 </MudStack>
                             </MudStack>
 
-                            @* Descripción de cambios *@
-                            <MudText Typo="Typo.body1" Class="mb-3" Style="line-height: 1.5;">
+                            @* Novedades de la versión (lenguaje de negocio) *@
+                            @if (entry.Novedades.Count > 0)
+                            {
+                                <MudText Typo="Typo.subtitle2" Class="mb-1 mt-1"
+                                         Style="font-weight: 600; opacity: 0.85;">
+                                    Novedades de esta versión
+                                </MudText>
+                                <ul style="margin: 0 0 0.75rem 1.25rem; padding: 0; line-height: 1.65;">
+                                    @foreach (var n in entry.Novedades)
+                                    {
+                                        <li>@n</li>
+                                    }
+                                </ul>
+                            }
+
+                            @* Detalle técnico de cambios *@
+                            <MudText Typo="Typo.caption" Class="mb-1 d-block"
+                                     Style="font-weight: 600; opacity: 0.55; letter-spacing: 0.5px; text-transform: uppercase;">
+                                Detalle técnico
+                            </MudText>
+                            <MudText Typo="Typo.body2" Class="mb-3"
+                                     Style="font-family: monospace; opacity: 0.65; line-height: 1.5;">
                                 @entry.Changes
                             </MudText>
 
