@@ -1,6 +1,18 @@
 {
-  "current": "1.6.0",
+  "current": "1.7.0",
   "history": [
+    {
+      "version": "1.7.0",
+      "builtAt": "2026-06-25T10:55:36-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "minor",
+      "gitCommit": "8e39815ba29bdf1f32c4c27b2f9ca4ae1f9449bf",
+      "changes": "[FEAT] feat(observabilidad): registrar en SystemLogs las llamadas a /registro-caja | [CHORE] chore(release): bump version to 1.6.0",
+      "novedades": [
+        "El historial de eventos ahora registra cuándo cada caja informa o actualiza su dirección de entrega, permitiendo confirmar si el sistema de la caja se está comunicando correctamente con el gateway."
+      ]
+    },
     {
       "version": "1.6.0",
       "builtAt": "2026-06-25T09:59:34-03:00",
