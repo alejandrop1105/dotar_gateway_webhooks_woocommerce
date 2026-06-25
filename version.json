@@ -1,6 +1,18 @@
 {
-  "current": "1.7.0",
+  "current": "1.7.1",
   "history": [
+    {
+      "version": "1.7.1",
+      "builtAt": "2026-06-25T11:18:10-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "patch",
+      "gitCommit": "0f71fa6ced4d9e26548effb0167df3d7f8a1a625",
+      "changes": "[FIX] fix(ui): mostrar fechas de cajas y proveedores en hora local | [CHORE] chore(release): bump version to 1.7.0",
+      "novedades": [
+        "Las fechas en las pantallas de Cajas y Proveedores ahora se muestran en hora argentina. Antes aparecían con 3 horas de adelanto por mostrar la hora universal (UTC)."
+      ]
+    },
     {
       "version": "1.7.0",
       "builtAt": "2026-06-25T10:55:36-03:00",
