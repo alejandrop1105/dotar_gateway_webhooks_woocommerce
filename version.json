@@ -1,6 +1,18 @@
 {
-  "current": "1.5.0",
+  "current": "1.5.1",
   "history": [
+    {
+      "version": "1.5.1",
+      "builtAt": "2026-06-25T09:08:19-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "patch",
+      "gitCommit": "759574abd8b9985375d9c892b12c2e7e5e78b05d",
+      "changes": "[FIX] fix(observabilidad): registrar response body y detalles en fallos de reenvío a caja | [CHORE] chore(gitignore): ignorar settings locales, backups, cache de tooling y artefactos de auditoría | [CHORE] chore(release): bump version to 1.5.0",
+      "novedades": [
+        "Cuando un reenvío a una caja falla, el sistema ahora guarda la respuesta exacta del destino. Esto permite diagnosticar por qué falló (por ejemplo, un error 503 temporal de la caja) en lugar de tener que adivinarlo."
+      ]
+    },
     {
       "version": "1.5.0",
       "builtAt": "2026-06-24T17:13:14-03:00",
