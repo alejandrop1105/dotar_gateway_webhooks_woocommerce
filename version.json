@@ -1,6 +1,18 @@
 {
-  "current": "1.5.1",
+  "current": "1.6.0",
   "history": [
+    {
+      "version": "1.6.0",
+      "builtAt": "2026-06-25T09:59:34-03:00",
+      "deployedBy": "Ale",
+      "host": "lab-oficina",
+      "bumpType": "minor",
+      "gitCommit": "7cf5c5a1a46c604d83df01eb15410722ca804b23",
+      "changes": "[FEAT] feat(ruteo): distinguir caja vencida de caja inexistente en dead-letter | [CHORE] chore(release): bump version to 1.5.1",
+      "novedades": [
+        "Cuando una caja está registrada pero su sistema (ERP) estuvo apagado o sin conexión por más de 30 minutos, el log ahora lo indica claramente como 'caja vencida' con la fecha del último contacto, en lugar de decir confusamente 'caja no encontrada'. Esto evita pensar que la caja no está dada de alta cuando en realidad solo faltaba que el ERP se reconectara."
+      ]
+    },
     {
       "version": "1.5.1",
       "builtAt": "2026-06-25T09:08:19-03:00",
