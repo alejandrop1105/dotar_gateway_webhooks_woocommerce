@@ -429,6 +429,8 @@ public class WebhookDispatcherWorker : BackgroundService
                 statusCode: result.StatusCode,
                 durationMs: result.DurationMs,
                 url: callbackUrl,
+                responseBody: result.ResponseBody,
+                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; identificador={identificadorCaja}",
                 ex: result.Exception);
 
             // Se persisten los headers del callback (incluye X-Caja-Signature) y el nombre
