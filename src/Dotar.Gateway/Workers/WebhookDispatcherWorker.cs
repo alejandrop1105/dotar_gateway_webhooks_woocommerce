@@ -359,20 +359,29 @@ public class WebhookDispatcherWorker : BackgroundService
 
         var identificadorCaja = routingKeyResult.RoutingKey!;
 
-        // 5. Buscar caja en el padrón (cache-aside)
-        var caja = await _cajaCache.GetByIdentificadorAsync(webhook.TenantId, identificadorCaja);
-        if (caja is null)
+        // 5. Resolver caja en el padrón (cache-aside), distinguiendo "no existe" de "vencida".
+        var resolucionCaja = await _cajaCache.ResolverAsync(webhook.TenantId, identificadorCaja);
+        if (resolucionCaja.Estado != ResolucionCaja.Encontrada)
         {
+            var (motivo, mensaje) = resolucionCaja.Estado == ResolucionCaja.Vencida
+                ? ("caja_vencida",
+                   $"Caja '{identificadorCaja}' registrada pero VENCIDA (último heartbeat {resolucionCaja.UltimaVez:O}). " +
+                   "El ERP no se registró dentro del TTL. Dead-letter.")
+                : ("caja_no_encontrada",
+                   $"Caja '{identificadorCaja}' no encontrada en padrón. Dead-letter.");
+
             _logger.LogWarning(
-                "Caja '{Identificador}' no encontrada en padrón para tenant {TenantId}. Dead-letter.",
-                identificadorCaja, webhook.TenantId);
+                "Caja '{Identificador}' no ruteable para tenant {TenantId} (motivo={Motivo}). Dead-letter.",
+                identificadorCaja, webhook.TenantId, motivo);
             _systemLog.Warn(SystemLogCategory.Worker,
-                $"Caja '{identificadorCaja}' no encontrada en padrón. Dead-letter.",
+                mensaje,
                 eventId: eventId,
-                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; identificador={identificadorCaja}");
-            await SaveDeadLetterAsync(webhook, eventId, "caja_no_encontrada");
+                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; identificador={identificadorCaja}; motivo={motivo}; ultimaVez={resolucionCaja.UltimaVez:O}");
+            await SaveDeadLetterAsync(webhook, eventId, motivo);
             return;
         }
+
+        var caja = resolucionCaja.Caja!;
 
         // 6. Obtener WebhookSecret del tenant para firmar el callback.
         //    El tenant ya fue cargado con Include en el paso 2 — no se necesita un segundo scope.

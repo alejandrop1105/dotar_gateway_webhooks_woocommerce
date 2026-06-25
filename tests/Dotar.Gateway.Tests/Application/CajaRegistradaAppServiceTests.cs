@@ -16,6 +16,9 @@ internal sealed class FakeCajaCache : ICajaRegistradaCacheService
 {
     public List<(int TenantId, string Identificador)> InvalidatedKeys { get; } = [];
 
+    public Task<CajaResolucion> ResolverAsync(int tenantId, string identificador)
+        => Task.FromResult(new CajaResolucion(null, ResolucionCaja.NoEncontrada, null));
+
     public Task<CajaRegistrada?> GetByIdentificadorAsync(int tenantId, string identificador)
         => Task.FromResult<CajaRegistrada?>(null);
 

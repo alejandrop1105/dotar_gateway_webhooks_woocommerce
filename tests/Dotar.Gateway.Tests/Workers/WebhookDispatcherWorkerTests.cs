@@ -1119,6 +1119,11 @@ public class FakeCajaCache : ICajaRegistradaCacheService
     public void Registrar(int tenantId, string identificador, CajaRegistrada caja)
         => _cajas[(tenantId, identificador)] = caja;
 
+    public Task<CajaResolucion> ResolverAsync(int tenantId, string identificador)
+        => Task.FromResult(_cajas.TryGetValue((tenantId, identificador), out var c)
+            ? new CajaResolucion(c, ResolucionCaja.Encontrada, c.UltimaVez)
+            : new CajaResolucion(null, ResolucionCaja.NoEncontrada, null));
+
     public Task<CajaRegistrada?> GetByIdentificadorAsync(int tenantId, string identificador)
         => Task.FromResult(_cajas.TryGetValue((tenantId, identificador), out var c) ? c : null);
 

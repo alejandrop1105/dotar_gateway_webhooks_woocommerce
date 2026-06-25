@@ -36,23 +36,25 @@ public class CajaRegistradaCacheService : ICajaRegistradaCacheService
     }
 
     /// <summary>
-    /// Obtiene una caja por (TenantId, Identificador) usando cache-aside.
-    /// En caso de miss, consulta la DB abriendo un scope temporal.
-    /// No retorna cajas cuya UltimaVez sea nula o supere el TTL configurado.
+    /// Resuelve una caja por (TenantId, Identificador) usando cache-aside, distinguiendo
+    /// "no existe" de "existe pero venció el heartbeat". En caso de miss consulta la DB
+    /// abriendo un scope temporal. Solo cachea (y devuelve <see cref="ResolucionCaja.Encontrada"/>)
+    /// cajas vigentes.
     /// </summary>
-    public async Task<CajaRegistrada?> GetByIdentificadorAsync(int tenantId, string identificador)
+    public async Task<CajaResolucion> ResolverAsync(int tenantId, string identificador)
     {
         var cacheKey = BuildKey(tenantId, identificador);
 
-        if (_cache.TryGetValue(cacheKey, out CajaRegistrada? cached))
-            return cached;
+        // Solo se cachean cajas vigentes, así que un hit siempre es Encontrada.
+        if (_cache.TryGetValue(cacheKey, out CajaRegistrada? cached) && cached is not null)
+            return new CajaResolucion(cached, ResolucionCaja.Encontrada, cached.UltimaVez);
 
         await _semaphore.WaitAsync();
         try
         {
             // Double-check después de adquirir el lock
-            if (_cache.TryGetValue(cacheKey, out cached))
-                return cached;
+            if (_cache.TryGetValue(cacheKey, out cached) && cached is not null)
+                return new CajaResolucion(cached, ResolucionCaja.Encontrada, cached.UltimaVez);
 
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
@@ -60,30 +62,38 @@ public class CajaRegistradaCacheService : ICajaRegistradaCacheService
             var caja = await db.CajasRegistradas.AsNoTracking()
                 .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Identificador == identificador);
 
-            // Excluir cajas "inactivas" (UltimaVez muy antigua — heartbeat vencido)
-            if (caja is not null && !EsVigente(caja))
+            if (caja is null)
+                return new CajaResolucion(null, ResolucionCaja.NoEncontrada, null);
+
+            // La caja existe pero su UltimaVez venció (heartbeat viejo — ERP sin registrarse).
+            if (!EsVigente(caja))
             {
                 _logger.LogDebug(
-                    "Caja '{Identificador}' del tenant {TenantId} excluida: UltimaVez vencida.",
-                    identificador, tenantId);
-                return null;
+                    "Caja '{Identificador}' del tenant {TenantId} excluida: UltimaVez vencida ({UltimaVez:O}).",
+                    identificador, tenantId, caja.UltimaVez);
+                return new CajaResolucion(null, ResolucionCaja.Vencida, caja.UltimaVez);
             }
 
-            if (caja is not null)
+            _cache.Set(cacheKey, caja, new MemoryCacheEntryOptions
             {
-                _cache.Set(cacheKey, caja, new MemoryCacheEntryOptions
-                {
-                    SlidingExpiration = _ttl
-                });
-            }
+                SlidingExpiration = _ttl
+            });
 
-            return caja;
+            return new CajaResolucion(caja, ResolucionCaja.Encontrada, caja.UltimaVez);
         }
         finally
         {
             _semaphore.Release();
         }
     }
+
+    /// <summary>
+    /// Obtiene una caja por (TenantId, Identificador) usando cache-aside.
+    /// No retorna cajas cuya UltimaVez sea nula o supere el TTL configurado.
+    /// Conveniencia sobre <see cref="ResolverAsync"/> para callers que no necesitan el motivo.
+    /// </summary>
+    public async Task<CajaRegistrada?> GetByIdentificadorAsync(int tenantId, string identificador)
+        => (await ResolverAsync(tenantId, identificador)).Caja;
 
     /// <summary>
     /// Invalida la entrada de caché para la caja indicada.

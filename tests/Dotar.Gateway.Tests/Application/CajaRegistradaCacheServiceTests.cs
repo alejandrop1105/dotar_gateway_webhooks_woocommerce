@@ -152,4 +152,53 @@ public class ICajaRegistradaCacheService_Test : IDisposable
         var result = await _cacheService.GetByIdentificadorAsync(_tenant.Id, "NO-EXISTE");
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task ResolverAsync_CajaInexistente_RetornaNoEncontrada()
+    {
+        var resolucion = await _cacheService.ResolverAsync(_tenant.Id, "NO-EXISTE");
+
+        Assert.Equal(ResolucionCaja.NoEncontrada, resolucion.Estado);
+        Assert.Null(resolucion.Caja);
+        Assert.Null(resolucion.UltimaVez);
+    }
+
+    [Fact]
+    public async Task ResolverAsync_CajaConHeartbeatVencido_RetornaVencidaConUltimaVez()
+    {
+        var ultimaVez = DateTime.UtcNow.AddHours(-2); // > 30 min de TTL
+        _db.CajasRegistradas.Add(new CajaRegistrada
+        {
+            TenantId = _tenant.Id,
+            Identificador = "CAJA-VENCIDA",
+            CallbackUrl = "https://tunel.cfargotunnel.com/cb",
+            UltimaVez = ultimaVez
+        });
+        await _db.SaveChangesAsync();
+
+        var resolucion = await _cacheService.ResolverAsync(_tenant.Id, "CAJA-VENCIDA");
+
+        Assert.Equal(ResolucionCaja.Vencida, resolucion.Estado);
+        Assert.Null(resolucion.Caja);
+        Assert.NotNull(resolucion.UltimaVez);
+    }
+
+    [Fact]
+    public async Task ResolverAsync_CajaVigente_RetornaEncontrada()
+    {
+        _db.CajasRegistradas.Add(new CajaRegistrada
+        {
+            TenantId = _tenant.Id,
+            Identificador = "CAJA-VIGENTE",
+            CallbackUrl = "https://tunel.cfargotunnel.com/cb",
+            UltimaVez = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var resolucion = await _cacheService.ResolverAsync(_tenant.Id, "CAJA-VIGENTE");
+
+        Assert.Equal(ResolucionCaja.Encontrada, resolucion.Estado);
+        Assert.NotNull(resolucion.Caja);
+        Assert.Equal("CAJA-VIGENTE", resolucion.Caja!.Identificador);
+    }
 }
