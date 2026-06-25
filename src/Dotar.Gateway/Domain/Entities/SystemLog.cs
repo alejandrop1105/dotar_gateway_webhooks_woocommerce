@@ -17,7 +17,8 @@ public enum SystemLogCategory
     Api,
     Auth,
     Worker,
-    System
+    System,
+    Registro
 }
 
 /// <summary>

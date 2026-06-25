@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Dotar.Gateway.Application;
+using Dotar.Gateway.Domain.Entities;
 using Dotar.Gateway.Infrastructure.Services;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -43,14 +45,22 @@ public static class RegistroCajaEndpoints
         HttpRequest request,
         ITenantCacheService tenantCache,
         CajaRegistradaAppService cajaService,
+        SystemLogService systemLog,
         ILogger<Program> logger)
     {
+        var sw = Stopwatch.StartNew();
+        var sourceIp = request.HttpContext.Connection.RemoteIpAddress?.ToString();
+
         // 1. Buscar tenant por slug
         var tenant = await tenantCache.GetBySlugAsync(slug);
         if (tenant is null || !tenant.IsActive)
         {
             logger.LogWarning(
                 "Registro de caja rechazado: tenant '{Slug}' no encontrado o inactivo", slug);
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: tenant '{slug}' no encontrado o inactivo",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.NotFound(new { error = $"Tenant '{slug}' no encontrado." });
         }
 
@@ -62,6 +72,10 @@ public static class RegistroCajaEndpoints
             logger.LogWarning(
                 "Registro de caja rechazado: body demasiado grande ({Bytes} bytes) para tenant '{Slug}'",
                 request.ContentLength.Value, slug);
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: body demasiado grande (Content-Length) para tenant '{slug}'",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.BadRequest(new { error = "El cuerpo del request supera el tamaño máximo permitido." });
         }
 
@@ -77,6 +91,10 @@ public static class RegistroCajaEndpoints
                 logger.LogWarning(
                     "Registro de caja rechazado: body real supera {Limite} bytes para tenant '{Slug}'",
                     LimiteBodyBytes, slug);
+                systemLog.Warn(SystemLogCategory.Registro,
+                    $"Registro rechazado: body supera {LimiteBodyBytes} bytes para tenant '{slug}'",
+                    tenantSlug: slug,
+                    details: $"sourceIp={sourceIp}");
                 return Results.BadRequest(new { error = "El cuerpo del request supera el tamaño máximo permitido." });
             }
             ms.Write(buffer, 0, leidos);
@@ -90,6 +108,10 @@ public static class RegistroCajaEndpoints
             logger.LogWarning(
                 "Registro de caja rechazado: header {Header} ausente para tenant '{Slug}'",
                 SignatureHeader, slug);
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: header {SignatureHeader} ausente para tenant '{slug}'",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.Unauthorized();
         }
 
@@ -98,6 +120,10 @@ public static class RegistroCajaEndpoints
         {
             logger.LogWarning(
                 "Registro de caja rechazado: firma inválida para tenant '{Slug}'", slug);
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: firma inválida para tenant '{slug}'",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.Unauthorized();
         }
 
@@ -111,17 +137,39 @@ public static class RegistroCajaEndpoints
         }
         catch
         {
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: body no es JSON válido para tenant '{slug}'",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.BadRequest(new { error = "El cuerpo no es JSON válido." });
         }
 
         if (registroReq is null)
+        {
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: body vacío para tenant '{slug}'",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.BadRequest(new { error = "El cuerpo no puede estar vacío." });
+        }
 
         if (string.IsNullOrWhiteSpace(registroReq.Identificador))
+        {
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: campo 'identificador' ausente para tenant '{slug}'",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.BadRequest(new { error = "El campo 'identificador' es obligatorio." });
+        }
 
         if (string.IsNullOrWhiteSpace(registroReq.CallbackUrl))
+        {
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado: campo 'callbackUrl' ausente para tenant '{slug}'",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return Results.BadRequest(new { error = "El campo 'callbackUrl' es obligatorio." });
+        }
 
         // 6. Delegar al AppService (valida anti-SSRF, upsert, invalida cache)
         var result = await cajaService.RegistrarAsync(
@@ -131,6 +179,10 @@ public static class RegistroCajaEndpoints
 
         if (!result.IsSuccess)
         {
+            systemLog.Warn(SystemLogCategory.Registro,
+                $"Registro rechazado por validación: {result.Message}",
+                tenantSlug: slug,
+                details: $"sourceIp={sourceIp}");
             return result.Error switch
             {
                 ResultError.Validation => Results.BadRequest(new { error = result.Message }),
@@ -142,6 +194,12 @@ public static class RegistroCajaEndpoints
         logger.LogInformation(
             "Caja '{Identificador}' registrada para tenant '{Slug}'.",
             registroReq.Identificador, slug);
+        systemLog.Info(SystemLogCategory.Registro,
+            $"Caja '{registroReq.Identificador}' registrada/actualizada para tenant '{slug}'",
+            tenantSlug: slug,
+            url: registroReq.CallbackUrl,
+            durationMs: sw.ElapsedMilliseconds,
+            details: $"identificador={registroReq.Identificador}; sourceIp={sourceIp}");
 
         return Results.Ok(new
         {

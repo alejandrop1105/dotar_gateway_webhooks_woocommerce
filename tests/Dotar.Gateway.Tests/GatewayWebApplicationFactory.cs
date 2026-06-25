@@ -1,3 +1,4 @@
+using Dotar.Gateway.Infrastructure.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -30,9 +31,16 @@ public class GatewayWebApplicationFactory : WebApplicationFactory<Program>, IAsy
 
         builder.ConfigureServices(services =>
         {
-            // Quitar hosted services para que no arranquen workers ni túnel
-            var hostedToRemove = services.Where(d => d.ServiceType == typeof(IHostedService)).ToList();
+            // Quitar TODOS los hosted services para que no arranquen workers ni túnel.
+            // Luego re-agregar solo SystemLogService para que persista logs a la DB
+            // (necesario para los tests de integración de observabilidad).
+            var hostedToRemove = services
+                .Where(d => d.ServiceType == typeof(IHostedService))
+                .ToList();
             foreach (var d in hostedToRemove) services.Remove(d);
+
+            // Re-agregar SystemLogService como hosted service (ya está registrado como singleton).
+            services.AddHostedService(sp => sp.GetRequiredService<SystemLogService>());
         });
     }
 
@@ -43,4 +51,5 @@ public class GatewayWebApplicationFactory : WebApplicationFactory<Program>, IAsy
         await base.DisposeAsync();
         try { if (File.Exists(DbPath)) File.Delete(DbPath); } catch { /* best-effort */ }
     }
+
 }

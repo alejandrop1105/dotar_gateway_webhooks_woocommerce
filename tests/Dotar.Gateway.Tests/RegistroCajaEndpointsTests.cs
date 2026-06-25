@@ -372,3 +372,130 @@ public class RegistroCaja_RateLimit_Test : IClassFixture<RegistroCajaRateLimitFa
 
 /// <summary>Factory dedicada para el test de rate limiting.</summary>
 public class RegistroCajaRateLimitFactory : RegistroCajaFactory { }
+
+/// <summary>Factory dedicada para los tests de observabilidad de SystemLog.</summary>
+public class RegistroCajaSystemLogFactory : RegistroCajaFactory { }
+
+/// <summary>
+/// Tests de observabilidad: verifica que el endpoint de registro de cajas
+/// emite SystemLogs a la tabla SystemLogs (visible en /logs del dashboard).
+/// Clase aislada para no consumir el rate limit del resto de los tests.
+/// </summary>
+public class RegistroCaja_SystemLog_Tests : IClassFixture<RegistroCajaSystemLogFactory>, IAsyncLifetime
+{
+    private readonly RegistroCajaSystemLogFactory _factory;
+
+    public RegistroCaja_SystemLog_Tests(RegistroCajaSystemLogFactory factory)
+    {
+        _factory = factory;
+    }
+
+    public async Task InitializeAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        if (!await db.Tenants.AnyAsync())
+        {
+            db.Tenants.Add(new Tenant
+            {
+                Name = "SysLog Tenant",
+                Slug = "syslog-tenant",
+                TargetUrl = "https://ejemplo.com/webhooks",
+                WebhookSecret = "syslog-secret",
+                IsActive = true,
+                SignatureScheme = SignatureScheme.WooCommerce,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    private static string ComputarHmac(string secret, byte[] body)
+    {
+        var secretBytes = Encoding.UTF8.GetBytes(secret);
+        var hash = HMACSHA256.HashData(secretBytes, body);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    [Fact]
+    public async Task RegistroCaja_RegistroValido_GeneraSystemLogInformation()
+    {
+        using var scope0 = _factory.Services.CreateScope();
+        var db0 = scope0.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var tenant = await db0.Tenants.FirstAsync();
+        var secret = tenant.WebhookSecret;
+        var slug = tenant.Slug;
+
+        var client = _factory.CreateClient();
+
+        var body = """{"identificador":"SYSLOG-INFO","callbackUrl":"https://tunel.cfargotunnel.com/cb"}""";
+        var bodyBytes = Encoding.UTF8.GetBytes(body);
+        var hmac = ComputarHmac(secret, bodyBytes);
+
+        var req = new HttpRequestMessage(HttpMethod.Post, $"/registro-caja/{slug}");
+        req.Headers.Add("X-Caja-Signature", hmac);
+        req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var resp = await client.SendAsync(req);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        // Polling: el SystemLog se escribe de forma asíncrona por el BackgroundService.
+        // Reintentamos cada 100ms hasta 6 segundos usando un scope nuevo en cada intento
+        // para no leer datos cacheados en el DbContext.
+        var encontrado = false;
+        var deadline = DateTime.UtcNow.AddSeconds(6);
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+            encontrado = await db.SystemLogs.AnyAsync(l =>
+                l.Category == SystemLogCategory.Registro &&
+                l.Level == SystemLogLevel.Information &&
+                l.TenantSlug == slug);
+            if (encontrado) break;
+        }
+
+        if (!encontrado)
+            Assert.Fail("SystemLog de registro exitoso no apareció en 6 segundos");
+    }
+
+    [Fact]
+    public async Task RegistroCaja_HmacInvalido_GeneraSystemLogWarning()
+    {
+        using var scope0 = _factory.Services.CreateScope();
+        var db0 = scope0.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        var tenant = await db0.Tenants.FirstAsync();
+        var slug = tenant.Slug;
+
+        var client = _factory.CreateClient();
+
+        var body = """{"identificador":"SYSLOG-WARN","callbackUrl":"https://tunel.cfargotunnel.com/cb"}""";
+        var req = new HttpRequestMessage(HttpMethod.Post, $"/registro-caja/{slug}");
+        req.Headers.Add("X-Caja-Signature", "firma-invalida-hex");
+        req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var resp = await client.SendAsync(req);
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+
+        // Polling: el SystemLog se escribe de forma asíncrona por el BackgroundService.
+        var encontrado = false;
+        var deadline = DateTime.UtcNow.AddSeconds(6);
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+            encontrado = await db.SystemLogs.AnyAsync(l =>
+                l.Category == SystemLogCategory.Registro &&
+                l.Level == SystemLogLevel.Warning &&
+                l.TenantSlug == slug);
+            if (encontrado) break;
+        }
+
+        if (!encontrado)
+            Assert.Fail("SystemLog de HMAC inválido no apareció en 6 segundos");
+    }
+}
