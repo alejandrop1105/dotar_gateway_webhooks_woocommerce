@@ -52,3 +52,14 @@ _agents/
 *.log
 logs/
 logs.txt
+
+# Claude Code — settings locales y backups (no versionar)
+.claude/settings.local.json
+*.bak
+*.bak.*
+
+# Tooling Gentle AI (cache/registro autogenerado)
+.atl/
+
+# Artefactos de auditoría/simulación (no versionar)
+audit_report_simulation.md
