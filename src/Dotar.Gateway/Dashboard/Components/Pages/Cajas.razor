@@ -52,7 +52,7 @@
             @if (context.UltimaVez.HasValue)
             {
                 <span title="@context.UltimaVez.Value.ToString("u")">
-                    @context.UltimaVez.Value.ToString("dd/MM/yy HH:mm")
+                    @context.UltimaVez.Value.ToLocalTime().ToString("dd/MM/yy HH:mm")
                 </span>
                 @if (EsReciente(context.UltimaVez))
                 {
@@ -64,7 +64,7 @@
                 <span>—</span>
             }
         </MudTd>
-        <MudTd DataLabel="Creado">@context.CreatedAt.ToString("dd/MM/yy HH:mm")</MudTd>
+        <MudTd DataLabel="Creado">@context.CreatedAt.ToLocalTime().ToString("dd/MM/yy HH:mm")</MudTd>
         @if (_filtroTenantId == 0)
         {
             <MudTd DataLabel="Tenant ID">@context.TenantId</MudTd>

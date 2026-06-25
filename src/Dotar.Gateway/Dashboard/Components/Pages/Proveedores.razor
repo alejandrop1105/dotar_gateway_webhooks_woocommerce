@@ -155,7 +155,7 @@ else
                             </MudChip>
                         </td>
                         <td><code>@cfg.HintCredenciales</code></td>
-                        <td>@cfg.UpdatedAt.ToString("dd/MM/yy HH:mm")</td>
+                        <td>@cfg.UpdatedAt.ToLocalTime().ToString("dd/MM/yy HH:mm")</td>
                         <td style="min-width: 180px; white-space: nowrap;">
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                            Size="Size.Small"
