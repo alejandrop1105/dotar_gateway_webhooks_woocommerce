@@ -148,6 +148,11 @@ public static class IngestEndpoints
         var payload = System.Text.Encoding.UTF8.GetString(body);
         var sourceUrl = request.Headers["X-WC-Webhook-Source"].FirstOrDefault();
         var eventId = Guid.NewGuid();
+
+        // Setear ProveedorNombre si el tenant tiene ruteo por proveedor activo.
+        // Null para el flujo 1-a-1 clásico (sin cambio de comportamiento).
+        var proveedorNombre = tenant.RuteoProveedorActivo ? tenant.ProveedorRuteoNombre : null;
+
         await queue.EnqueueAsync(new QueuedWebhook
         {
             TenantId = tenant.Id,
@@ -157,7 +162,8 @@ public static class IngestEndpoints
             Payload = payload,
             ReceivedAt = DateTime.UtcNow,
             ForwardedHeaders = forwardedHeaders,
-            EventId = eventId
+            EventId = eventId,
+            ProveedorNombre = proveedorNombre
         });
 
         logger.LogInformation("Webhook aceptado para tenant '{Slug}' → encolado", slug);

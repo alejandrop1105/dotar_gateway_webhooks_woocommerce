@@ -1049,7 +1049,15 @@ public class FakeProviderForWorker : IWebhookProvider
     public bool RutearSinEnriquecimientoValor { get; set; } = false;
     public RoutingKeyResult RoutingKeyDesdeNotificacionResult { get; set; } = RoutingKeyResult.Invalid;
 
+    /// <summary>
+    /// Controla si el fake simula un proveedor que requiere ProveedorWebhookConfig.
+    /// Default: true (comportamiento de MercadoPago, no rompe tests existentes).
+    /// </summary>
+    public bool RequiereConfigProveedorValor { get; set; } = true;
+
     public FakeProviderForWorker(string nombre) { Nombre = nombre; }
+
+    public bool RequiereConfigProveedor => RequiereConfigProveedorValor;
 
     public string? ResolverCuentaExterna(IHeaderDictionary headers, byte[] body) => "123456789";
 
