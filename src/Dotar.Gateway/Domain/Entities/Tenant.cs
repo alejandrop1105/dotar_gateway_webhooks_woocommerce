@@ -48,4 +48,30 @@ public class Tenant
     public TenantGroup? TenantGroup { get; set; }
 
     public ICollection<DeliveryLog> DeliveryLogs { get; set; } = [];
+
+    // ─── Ruteo por proveedor (WooCommerce multi-sucursal) ─────────────────────
+
+    /// <summary>
+    /// Indica si el webhook entrante debe rutearse a través de un proveedor de
+    /// ruteo dinámico (ej. woocommerce-multisucursal). Default false.
+    /// </summary>
+    public bool RuteoProveedorActivo { get; set; } = false;
+
+    /// <summary>
+    /// Nombre del proveedor de ruteo. Coincide con la clave de keyed DI.
+    /// Ej. "woocommerce-multisucursal". Null si RuteoProveedorActivo == false.
+    /// </summary>
+    public string? ProveedorRuteoNombre { get; set; }
+
+    /// <summary>
+    /// Key del campo meta_data del pedido WooCommerce desde donde se extrae
+    /// el identificador de sucursal. Configurable por tenant.
+    /// </summary>
+    public string? SucursalMetaKey { get; set; }
+
+    /// <summary>
+    /// Separador opcional dentro del value de meta_data. Si está configurado,
+    /// se toma la parte izquierda del primer separador encontrado.
+    /// </summary>
+    public string? SucursalMetaSeparador { get; set; }
 }
