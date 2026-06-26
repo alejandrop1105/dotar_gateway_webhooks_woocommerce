@@ -109,6 +109,16 @@ builder.Services.AddKeyedSingleton<IWebhookProvider, MercadoPagoProvider>(
         return new MercadoPagoProvider(client, logger);
     });
 
+// WooCommerce multi-sucursal: sin HttpClient ni credenciales externas.
+// La firma entrante (X-WC-Webhook-Signature) la valida IngestEndpoints con el WebhookSecret del Tenant.
+builder.Services.AddKeyedSingleton<IWebhookProvider, WooCommerceMultiSucursalProvider>(
+    "woocommerce-multisucursal",
+    (sp, _) =>
+    {
+        var logger = sp.GetRequiredService<ILogger<WooCommerceMultiSucursalProvider>>();
+        return new WooCommerceMultiSucursalProvider(logger);
+    });
+
 // ─── Worker Background Services ──────────────────────
 // Worker como singleton para que el Monitor pueda invocarlo para retry manual.
 // IKeyedServiceProvider: el root IServiceProvider implementa esta interfaz en .NET 8+

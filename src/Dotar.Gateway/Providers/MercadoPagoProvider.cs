@@ -20,6 +20,10 @@ public class MercadoPagoProvider : IWebhookProvider
 {
     public string Nombre => "mercadopago";
 
+    /// <inheritdoc/>
+    /// MercadoPago requiere ProveedorWebhookConfig con AccessToken y SigningSecret.
+    public bool RequiereConfigProveedor => true;
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<MercadoPagoProvider> _logger;
 

@@ -205,110 +205,149 @@ public class WebhookDispatcherWorker : BackgroundService
             return;
         }
 
-        // 2. Obtener ProveedorWebhookConfig del tenant para el enriquecimiento.
-        //    Se incluye el Tenant para obtener WebhookSecret en el mismo scope (evita segundo scope).
-        //    Además se descifran las credenciales vía ProveedorWebhookConfigAppService para no pasar
-        //    el ciphertext al provider (que espera JSON en claro con AccessToken y SigningSecret).
-        ProveedorWebhookConfig? configEntidad;
-        ProveedorWebhookConfig? configParaProvider;
-        try
+        // 2. Obtener configuración/credenciales según la capacidad del proveedor.
+        //
+        //    - RequiereConfigProveedor=true (ej. MercadoPago): carga ProveedorWebhookConfig con
+        //      credenciales descifradas. Dead-letter si falta o está inactiva.
+        //    - RequiereConfigProveedor=false (ej. WooCommerceMultiSucursal): salta la carga de config,
+        //      carga el Tenant AsNoTracking solo para WebhookSecret (firma de callback).
+        ProveedorWebhookConfig? configEntidad = null;
+        ProveedorWebhookConfig? configParaProvider = null;
+        Tenant? tenantParaSecret = null;
+
+        if (provider.RequiereConfigProveedor)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-            configEntidad = await db.ProveedoresWebhookConfig
-                .Include(p => p.Tenant)
-                .AsNoTracking()
-                .FirstOrDefaultAsync(p =>
-                    p.TenantId == webhook.TenantId &&
-                    p.ProveedorNombre == proveedorNombre, ct);
-
-            if (configEntidad is not null)
+            // Bloque original sin cambios: carga config + descifra credenciales
+            try
             {
-                // Descifrar credenciales con el AppService y reconstruir la entidad con JSON en claro.
-                // Idéntico al patrón del endpoint WebhookProveedorEndpoints que ya funciona bien.
-                var configAppService = scope.ServiceProvider
-                    .GetRequiredService<Application.ProveedorWebhookConfigAppService>();
-                var credencialesDescifradas = await configAppService
-                    .GetByTenantYProveedorAsync(webhook.TenantId, proveedorNombre);
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+                configEntidad = await db.ProveedoresWebhookConfig
+                    .Include(p => p.Tenant)
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p =>
+                        p.TenantId == webhook.TenantId &&
+                        p.ProveedorNombre == proveedorNombre, ct);
 
-                // Filtrar inactivas coherentemente con GetCompletoByProveedorYCuentaAsync
-                if (credencialesDescifradas is null || !credencialesDescifradas.IsActive)
+                if (configEntidad is not null)
                 {
-                    configParaProvider = null;
-                }
-                else
-                {
-                    configParaProvider = new ProveedorWebhookConfig
+                    // Descifrar credenciales con el AppService y reconstruir la entidad con JSON en claro.
+                    var configAppService = scope.ServiceProvider
+                        .GetRequiredService<Application.ProveedorWebhookConfigAppService>();
+                    var credencialesDescifradas = await configAppService
+                        .GetByTenantYProveedorAsync(webhook.TenantId, proveedorNombre);
+
+                    if (credencialesDescifradas is null || !credencialesDescifradas.IsActive)
                     {
-                        TenantId = configEntidad.TenantId,
-                        ProveedorNombre = configEntidad.ProveedorNombre,
-                        CuentaExternaId = configEntidad.CuentaExternaId,
-                        CredencialesCifradas = System.Text.Json.JsonSerializer.Serialize(new
+                        configParaProvider = null;
+                    }
+                    else
+                    {
+                        configParaProvider = new ProveedorWebhookConfig
                         {
-                            SigningSecret = credencialesDescifradas.SigningSecret,
-                            AccessToken = credencialesDescifradas.AccessToken
-                        }),
-                        BaseUrl = configEntidad.BaseUrl,
-                        IsActive = configEntidad.IsActive,
-                        Tenant = configEntidad.Tenant
-                    };
+                            TenantId = configEntidad.TenantId,
+                            ProveedorNombre = configEntidad.ProveedorNombre,
+                            CuentaExternaId = configEntidad.CuentaExternaId,
+                            CredencialesCifradas = System.Text.Json.JsonSerializer.Serialize(new
+                            {
+                                SigningSecret = credencialesDescifradas.SigningSecret,
+                                AccessToken = credencialesDescifradas.AccessToken
+                            }),
+                            BaseUrl = configEntidad.BaseUrl,
+                            IsActive = configEntidad.IsActive,
+                            Tenant = configEntidad.Tenant
+                        };
+                    }
                 }
             }
-            else
+            catch (Exception ex)
             {
-                configParaProvider = null;
+                _logger.LogError(ex,
+                    "Error al obtener ProveedorWebhookConfig para tenant {TenantId} y proveedor '{Proveedor}'",
+                    webhook.TenantId, proveedorNombre);
+                await SaveDeadLetterAsync(webhook, eventId, "error_config_proveedor");
+                return;
+            }
+
+            if (configEntidad is null || configParaProvider is null)
+            {
+                var motivo = configEntidad is null
+                    ? "config_proveedor_no_encontrada"
+                    : "config_proveedor_inactiva";
+                _logger.LogWarning(
+                    "Sin config activa de proveedor '{Proveedor}' para tenant {TenantId}. Dead-letter ({Motivo}).",
+                    proveedorNombre, webhook.TenantId, motivo);
+                _systemLog.Warn(SystemLogCategory.Forward,
+                    $"Sin config activa de proveedor '{proveedorNombre}' para tenant {webhook.TenantId}. Dead-letter.",
+                    eventId: eventId,
+                    details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo={motivo}");
+                await SaveDeadLetterAsync(webhook, eventId, motivo);
+                return;
             }
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex,
-                "Error al obtener ProveedorWebhookConfig para tenant {TenantId} y proveedor '{Proveedor}'",
-                webhook.TenantId, proveedorNombre);
-            await SaveDeadLetterAsync(webhook, eventId, "error_config_proveedor");
-            return;
-        }
-
-        if (configEntidad is null || configParaProvider is null)
-        {
-            var motivo = configEntidad is null
-                ? "config_proveedor_no_encontrada"
-                : "config_proveedor_inactiva";
-            _logger.LogWarning(
-                "Sin config activa de proveedor '{Proveedor}' para tenant {TenantId}. Dead-letter ({Motivo}).",
-                proveedorNombre, webhook.TenantId, motivo);
-            _systemLog.Warn(SystemLogCategory.Forward,
-                $"Sin config activa de proveedor '{proveedorNombre}' para tenant {webhook.TenantId}. Dead-letter.",
-                eventId: eventId,
-                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo={motivo}");
-            await SaveDeadLetterAsync(webhook, eventId, motivo);
-            return;
+            // Proveedor sin credenciales externas (ej. WooCommerceMultiSucursal).
+            // Solo necesitamos el Tenant para obtener WebhookSecret y firmar el callback.
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+                tenantParaSecret = await db.Tenants
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.Id == webhook.TenantId, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error al cargar Tenant {TenantId} para WebhookSecret (proveedor '{Proveedor}')",
+                    webhook.TenantId, proveedorNombre);
+                await SaveDeadLetterAsync(webhook, eventId, "error_carga_tenant");
+                return;
+            }
         }
 
         // 3. Bifurcación por tipo de notificación:
-        //    - order → rutear directo desde data.external_reference del RAW, sin llamar a la API de MP.
-        //    - payment (o sin type) → flujo de enriquecimiento existente, intacto.
+        //    - RutearSinEnriquecimiento=true  → extraer routing key directamente del RAW (WooCommerce o MP order).
+        //    - RutearSinEnriquecimiento=false → flujo de enriquecimiento existente (MP payment, intacto).
         RoutingKeyResult routingKeyResult;
 
         if (provider.RutearSinEnriquecimiento(webhook.Payload))
         {
-            // Rama order: sin enriquecimiento
+            // Rama sin enriquecimiento: WooCommerceMultiSucursal (siempre) o MP order.
+            // ExtraerRoutingKeyConConfig permite al provider usar la configuración del tenant
+            // (ej. SucursalMetaKey/SucursalMetaSeparador). MP usa el default que delega en
+            // ExtraerRoutingKeyDesdeNotificacion → sin cambios de comportamiento para MP.
+            var tenantActual = tenantParaSecret ?? configEntidad?.Tenant;
+            if (tenantActual is null)
+            {
+                _logger.LogError(
+                    "Tenant {TenantId} no encontrado al resolver config para proveedor '{Proveedor}'. Dead-letter.",
+                    webhook.TenantId, proveedorNombre);
+                _systemLog.Error(SystemLogCategory.Worker,
+                    $"Tenant {webhook.TenantId} no encontrado para proveedor '{proveedorNombre}'. Dead-letter.",
+                    eventId: eventId,
+                    details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo=tenant_no_encontrado");
+                await SaveDeadLetterAsync(webhook, eventId, "tenant_no_encontrado");
+                return;
+            }
+
             _systemLog.Info(SystemLogCategory.Worker,
-                $"Notificación MP tipo 'order' detectada — modo sin_enriquecimiento.",
+                $"Proveedor '{proveedorNombre}' — modo sin_enriquecimiento.",
                 eventId: eventId,
                 details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; modo=sin_enriquecimiento");
 
-            routingKeyResult = provider.ExtraerRoutingKeyDesdeNotificacion(webhook.Payload);
+            routingKeyResult = provider.ExtraerRoutingKeyConConfig(webhook.Payload, tenantActual);
         }
         else
         {
-            // Rama payment / default: flujo de enriquecimiento existente (intacto)
+            // Rama con enriquecimiento: MP payment / default (flujo original intacto)
             _systemLog.Info(SystemLogCategory.Worker,
                 $"Notificación MP tipo 'payment' detectada — modo con_enriquecimiento.",
                 eventId: eventId,
                 details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; modo=con_enriquecimiento");
 
             // 3a. Extraer idEvento del payload (ej. data.id en MP).
-            //     Si no se puede extraer, dead-letter inmediato sin llamar EnriquecerAsync con id vacío.
             var idEvento = ExtraerIdEvento(webhook.Payload);
             if (string.IsNullOrEmpty(idEvento))
             {
@@ -324,7 +363,7 @@ public class WebhookDispatcherWorker : BackgroundService
             }
 
             // 3b. Enriquecer contra la API del proveedor usando la config con credenciales descifradas
-            var enrichmentResult = await provider.EnriquecerAsync(idEvento, configParaProvider, ct);
+            var enrichmentResult = await provider.EnriquecerAsync(idEvento, configParaProvider!, ct);
 
             if (!enrichmentResult.Exitoso)
             {
@@ -343,17 +382,19 @@ public class WebhookDispatcherWorker : BackgroundService
             routingKeyResult = provider.ExtraerRoutingKey(enrichmentResult.PayloadEnriquecido!);
         }
 
-        // ── Tramo común (order y payment): chequeo routing key, buscar caja, firmar, reenviar ──
+        // ── Tramo común: chequeo routing key, buscar caja, firmar, reenviar ──
         if (!routingKeyResult.EsValido)
         {
+            var motivoRoutingKey = provider.MotivoRoutingKeyInvalida;
             _logger.LogWarning(
                 "Routing key inválida para proveedor '{Proveedor}' tenant {TenantId}. Dead-letter.",
                 proveedorNombre, webhook.TenantId);
-            _systemLog.Warn(SystemLogCategory.Forward,
-                $"Routing key inválida para proveedor '{proveedorNombre}'. Dead-letter.",
+            // ADR-4: emitir SystemLog Worker/Error — texto neutral de dominio (aplica a cualquier proveedor)
+            _systemLog.Error(SystemLogCategory.Worker,
+                $"Routing key inválida para proveedor '{proveedorNombre}' — routing key no extraíble del payload. Dead-letter.",
                 eventId: eventId,
-                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo=external_reference_invalida");
-            await SaveDeadLetterAsync(webhook, eventId, "external_reference_invalida");
+                details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; motivo={motivoRoutingKey}");
+            await SaveDeadLetterAsync(webhook, eventId, motivoRoutingKey);
             return;
         }
 
@@ -373,7 +414,8 @@ public class WebhookDispatcherWorker : BackgroundService
             _logger.LogWarning(
                 "Caja '{Identificador}' no ruteable para tenant {TenantId} (motivo={Motivo}). Dead-letter.",
                 identificadorCaja, webhook.TenantId, motivo);
-            _systemLog.Warn(SystemLogCategory.Worker,
+            // ADR-4: SystemLog Worker/Error para caja_no_encontrada y caja_vencida
+            _systemLog.Error(SystemLogCategory.Worker,
                 mensaje,
                 eventId: eventId,
                 details: $"proveedor={proveedorNombre}; tenantId={webhook.TenantId}; identificador={identificadorCaja}; motivo={motivo}; ultimaVez={resolucionCaja.UltimaVez:O}");
@@ -384,8 +426,11 @@ public class WebhookDispatcherWorker : BackgroundService
         var caja = resolucionCaja.Caja!;
 
         // 6. Obtener WebhookSecret del tenant para firmar el callback.
-        //    El tenant ya fue cargado con Include en el paso 2 — no se necesita un segundo scope.
-        var webhookSecret = configEntidad.Tenant?.WebhookSecret ?? string.Empty;
+        //    - RequiereConfigProveedor=true: el tenant vino con Include en el paso 2.
+        //    - RequiereConfigProveedor=false: se cargó tenantParaSecret en el paso 2 (else-branch).
+        var webhookSecret = (tenantParaSecret?.WebhookSecret)
+            ?? configEntidad?.Tenant?.WebhookSecret
+            ?? string.Empty;
 
         if (string.IsNullOrEmpty(webhookSecret))
         {

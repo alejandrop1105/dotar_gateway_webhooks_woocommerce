@@ -38,6 +38,29 @@ public interface IWebhookProvider
     string Nombre { get; }
 
     /// <summary>
+    /// Indica si este proveedor requiere una ProveedorWebhookConfig con credenciales cifradas.
+    /// MercadoPago: true (necesita AccessToken + SigningSecret).
+    /// WooCommerceMultiSucursal: false (usa WebhookSecret del Tenant directamente).
+    /// </summary>
+    bool RequiereConfigProveedor { get; }
+
+    /// <summary>
+    /// Motivo de dead-letter cuando la routing key no puede extraerse del payload.
+    /// Default: "external_reference_invalida" (contrato histórico de MercadoPago).
+    /// WooCommerceMultiSucursalProvider overridea con "sucursal_ausente".
+    /// </summary>
+    string MotivoRoutingKeyInvalida => "external_reference_invalida";
+
+    /// <summary>
+    /// Extrae la routing key usando la configuración del tenant (key y separador de meta_data).
+    /// Método default: delega en ExtraerRoutingKeyDesdeNotificacion(payload) — sin cambios para
+    /// MercadoPago que no usa configuración de tenant para extraer la routing key.
+    /// WooCommerceMultiSucursalProvider overridea este método para leer SucursalMetaKey/SucursalMetaSeparador.
+    /// </summary>
+    RoutingKeyResult ExtraerRoutingKeyConConfig(string payload, Tenant tenant)
+        => ExtraerRoutingKeyDesdeNotificacion(payload);
+
+    /// <summary>
     /// Extrae el identificador de cuenta externa del tenant desde el payload entrante (headers + body).
     /// MP: lee user_id del body JSON. Retorna null si no puede resolverse → 404 en el endpoint.
     /// </summary>
