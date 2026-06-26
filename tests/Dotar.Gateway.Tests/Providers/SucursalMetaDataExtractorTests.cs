@@ -140,4 +140,69 @@ public class SucursalMetaDataExtractorTests
 
         Assert.False(resultado.EsValido);
     }
+
+    // ─── Caso 9: value numérico → se acepta como string ("3") ─────────────────
+    // El plugin puede inyectar el código de sucursal como número en vez de string.
+
+    [Fact]
+    public void Extraer_ValueNumerico_RetornaComoString()
+    {
+        var payload = """{"meta_data":[{"key":"sucursal_codigo","value":3}]}""";
+
+        var resultado = SucursalMetaDataExtractor.Extraer(payload, "sucursal_codigo", null);
+
+        Assert.True(resultado.EsValido);
+        Assert.Equal("3", resultado.RoutingKey);
+    }
+
+    // ─── Caso 10: value numérico con separador configurado ───────────────────
+
+    [Fact]
+    public void Extraer_ValueNumericoConSeparador_RetornaParteIzquierda()
+    {
+        // Número sin el separador → Split da 1 elemento → el número completo.
+        var payload = """{"meta_data":[{"key":"sucursal_codigo","value":42}]}""";
+
+        var resultado = SucursalMetaDataExtractor.Extraer(payload, "sucursal_codigo", "__");
+
+        Assert.True(resultado.EsValido);
+        Assert.Equal("42", resultado.RoutingKey);
+    }
+
+    // ─── Caso 11: value booleano → Invalid (no es un código de sucursal) ──────
+
+    [Fact]
+    public void Extraer_ValueBooleano_RetornaInvalido()
+    {
+        var payload = """{"meta_data":[{"key":"sucursal_codigo","value":true}]}""";
+
+        var resultado = SucursalMetaDataExtractor.Extraer(payload, "sucursal_codigo", null);
+
+        Assert.False(resultado.EsValido);
+    }
+
+    // ─── Caso 12: value JSON null explícito → Invalid ────────────────────────
+
+    [Fact]
+    public void Extraer_ValueNullExplicito_RetornaInvalido()
+    {
+        var payload = """{"meta_data":[{"key":"sucursal_codigo","value":null}]}""";
+
+        var resultado = SucursalMetaDataExtractor.Extraer(payload, "sucursal_codigo", null);
+
+        Assert.False(resultado.EsValido);
+    }
+
+    // ─── Caso 13: keys duplicadas → gana el primer match ─────────────────────
+
+    [Fact]
+    public void Extraer_KeysDuplicadas_RetornaPrimerMatch()
+    {
+        var payload = """{"meta_data":[{"key":"sucursal_codigo","value":"PRIMERA"},{"key":"sucursal_codigo","value":"SEGUNDA"}]}""";
+
+        var resultado = SucursalMetaDataExtractor.Extraer(payload, "sucursal_codigo", null);
+
+        Assert.True(resultado.EsValido);
+        Assert.Equal("PRIMERA", resultado.RoutingKey);
+    }
 }

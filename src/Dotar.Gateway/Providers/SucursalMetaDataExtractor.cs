@@ -8,7 +8,9 @@ namespace Dotar.Gateway.Providers;
 ///
 /// Reglas de extracción:
 ///   - Retorna Invalid si: JSON inválido, meta_data ausente o no es array,
-///     ningún item tiene key == metaKey, o el value resultante está vacío.
+///     ningún item tiene key == metaKey, el value no es string ni número
+///     (bool/null/objeto/array), o el value resultante está vacío.
+///   - El value se acepta como string ("3") o número (3, se toma su forma textual).
 ///   - Si separador no es null/vacío: value.Split(separador)[0].Trim()
 ///   - Si separador es null/vacío: value.Trim() completo
 /// </summary>
@@ -54,7 +56,14 @@ public static class SucursalMetaDataExtractor
                 if (!item.TryGetProperty("value", out var valueProp))
                     continue;
 
-                value = valueProp.GetString();
+                // El código de sucursal puede venir como string ("3") o como número (3).
+                // Se acepta ambos; bool/null/objeto/array no son códigos válidos → null (Invalid).
+                value = valueProp.ValueKind switch
+                {
+                    JsonValueKind.String => valueProp.GetString(),
+                    JsonValueKind.Number => valueProp.GetRawText(),
+                    _ => null
+                };
                 break;
             }
 
