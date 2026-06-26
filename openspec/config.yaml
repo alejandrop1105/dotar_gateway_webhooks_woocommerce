@@ -1,14 +1,15 @@
 project: dotar_gateway_webhooks_woocommerce
 initialized: "2026-06-17"
+last_reinit: "2026-06-26"
 artifact_store: hybrid
 
 context: |
-  .NET 9 Webhooks Gateway. Blazor Server + MudBlazor v9 dashboard.
-  ASP.NET Minimal APIs para ingesta (POST /ingest/{slug}) y API de tenants.
-  EF Core + SQLite WAL (GatewayDbContext), Redis como cola, Polly v8 Circuit Breaker.
-  BackgroundService: WebhookDispatcherWorker. csproj: src/Dotar.Gateway/Dotar.Gateway.csproj.
-  Arquitectura: Domain (Entities/Models) + Infrastructure (Data + Services) + Endpoints + Workers + Dashboard.
-  Deuda activa: sin capa Application (use cases/comandos).
+  .NET 9 Webhooks Gateway. Blazor Server + MudBlazor v9.2.0 dashboard.
+  ASP.NET Minimal APIs para ingesta (POST /ingest/{slug}) y API de tenants/proveedores/cajas.
+  EF Core + SQLite WAL (GatewayDbContext), Redis como cola, Polly v8.5.2 Circuit Breaker.
+  BackgroundService: WebhookDispatcherWorker, DescifradoCredencialesWorker.
+  csproj: src/Dotar.Gateway/Dotar.Gateway.csproj.
+  Arquitectura: Domain + Application (use cases/servicios de app) + Infrastructure + Endpoints + Workers + Providers + Dashboard.
   Código, comentarios, UI y commits en español.
 
 testing:
@@ -23,6 +24,12 @@ testing:
     unit: true
     integration: true
     e2e: false
+  test_directories:
+    - tests/Dotar.Gateway.Tests/Application/
+    - tests/Dotar.Gateway.Tests/Domain/
+    - tests/Dotar.Gateway.Tests/Infrastructure/
+    - tests/Dotar.Gateway.Tests/Workers/
+    - tests/Dotar.Gateway.Tests/Providers/
 
 phase_rules:
   proposal: "Artefactos SDD en español neutro/profesional."

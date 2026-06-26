@@ -96,6 +96,12 @@ public class GatewayDbContext : DbContext
                 .WithMany(g => g.Tenants)
                 .HasForeignKey(t => t.TenantGroupId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Ruteo por proveedor — columnas aditivas (WU-1)
+            e.Property(t => t.RuteoProveedorActivo).HasDefaultValue(false);
+            e.Property(t => t.ProveedorRuteoNombre).HasMaxLength(100);
+            e.Property(t => t.SucursalMetaKey).HasMaxLength(200);
+            e.Property(t => t.SucursalMetaSeparador).HasMaxLength(20);
         });
 
         // ─── DeliveryLog ───
