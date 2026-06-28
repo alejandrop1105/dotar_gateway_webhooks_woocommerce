@@ -1,3 +1,4 @@
+using Dotar.Gateway.Application;
 using Dotar.Gateway.Endpoints;
 using Dotar.Gateway.Infrastructure.Data;
 using Microsoft.AspNetCore.DataProtection;
@@ -70,6 +71,11 @@ builder.Services.AddSingleton<DeployHistoryService>();
 builder.Services.AddTransient<ForwardingService>();
 builder.Services.AddScoped<Dotar.Gateway.Endpoints.ApiKeyEndpointFilter>();
 builder.Services.AddScoped<Dotar.Gateway.Application.TenantAppService>();
+
+// ─── Catálogo de proveedores de ruteo (lista explícita para evitar problemas ─
+//     con keyed singletons no resueltos por IEnumerable<T> en .NET 9)        ─
+builder.Services.AddSingleton<IProveedorRuteoCatalog>(
+    _ => new ProveedorRuteoCatalog(["mercadopago", "woocommerce-multisucursal"]));
 builder.Services.AddScoped<Dotar.Gateway.Application.CajaRegistradaAppService>();
 builder.Services.AddScoped<Dotar.Gateway.Application.ProveedorWebhookConfigAppService>();
 builder.Services.AddSingleton<ICajaRegistradaCacheService, CajaRegistradaCacheService>();
