@@ -7,6 +7,7 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.Extensions.DependencyInjection
 @inject IServiceScopeFactory ScopeFactory
+@inject IProveedorRuteoCatalog ProveedorCatalog
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -80,6 +81,32 @@
                 }
             </MudSelect>
             <MudSwitch @bind-Value="_form.IsActive" Color="Color.Success" Label="Activo" />
+
+            @* ─── Ruteo por proveedor (multi-sucursal) ─── *@
+            <MudDivider Class="my-2" />
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Ruteo por proveedor</MudText>
+            <MudSwitch @bind-Value="_form.RuteoProveedorActivo" Color="Color.Info"
+                       Label="Activar ruteo por proveedor" />
+            @if (_form.RuteoProveedorActivo)
+            {
+                <MudSelect T="string" @bind-Value="_form.ProveedorRuteoNombre"
+                           Label="Proveedor de ruteo"
+                           HelperText="El proveedor que extrae la sucursal del payload"
+                           Variant="Variant.Outlined" Required="true">
+                    @foreach (var key in _proveedoresDisponibles)
+                    {
+                        <MudSelectItem T="string" Value="@key">@key</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTextField @bind-Value="_form.SucursalMetaKey"
+                              Label="Meta Key de sucursal"
+                              HelperText="Campo meta_data del pedido con el ID de sucursal (ej. _woosea_item_id)"
+                              Placeholder="_woosea_item_id" Variant="Variant.Outlined" Required="true" />
+                <MudTextField @bind-Value="_form.SucursalMetaSeparador"
+                              Label="Separador de sucursal (opcional)"
+                              HelperText="Si el valor contiene separador, se toma la parte izquierda (ej. :)"
+                              Placeholder=":" Variant="Variant.Outlined" />
+            }
 
             <MudStack Row="true" Spacing="2" Class="mt-2">
                 <MudButton Variant="Variant.Filled" Color="Color.Primary"
@@ -169,6 +196,7 @@ else
     private List<Tenant> _tenants = [];
     private List<RetryPolicy> _policies = [];
     private List<TenantGroup> _groups = [];
+    private IReadOnlyCollection<string> _proveedoresDisponibles = [];
     private TenantFormModel _form = new();
     private string? _errorMessage;
     private bool _showSecret = false;
@@ -180,6 +208,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Poblar el select de proveedores disponibles desde el catálogo inyectado.
+        _proveedoresDisponibles = ProveedorCatalog.KeysValidas;
         Navigation.LocationChanged += OnLocationChanged;
         await HandleRouteAsync();
     }
@@ -233,15 +263,19 @@ else
             _editingSlug = tenant.Slug;
             _form = new TenantFormModel
             {
-                Name = tenant.Name,
-                Slug = tenant.Slug,
-                WebhookSecret = tenant.WebhookSecret,
-                TargetUrl = tenant.TargetUrl,
-                IsActive = tenant.IsActive,
-                SignatureScheme = tenant.SignatureScheme,
-                SignatureHeader = tenant.SignatureHeader ?? string.Empty,
-                RetryPolicyId = tenant.RetryPolicyId ?? 0,
-                TenantGroupId = tenant.TenantGroupId ?? 0
+                Name                  = tenant.Name,
+                Slug                  = tenant.Slug,
+                WebhookSecret         = tenant.WebhookSecret,
+                TargetUrl             = tenant.TargetUrl,
+                IsActive              = tenant.IsActive,
+                SignatureScheme       = tenant.SignatureScheme,
+                SignatureHeader       = tenant.SignatureHeader ?? string.Empty,
+                RetryPolicyId         = tenant.RetryPolicyId ?? 0,
+                TenantGroupId         = tenant.TenantGroupId ?? 0,
+                RuteoProveedorActivo  = tenant.RuteoProveedorActivo,
+                ProveedorRuteoNombre  = tenant.ProveedorRuteoNombre ?? string.Empty,
+                SucursalMetaKey       = tenant.SucursalMetaKey ?? string.Empty,
+                SucursalMetaSeparador = tenant.SucursalMetaSeparador ?? string.Empty
             };
         }
     }
@@ -287,14 +321,18 @@ else
 
             // 0 = desasociar FK, >0 = asignar FK, null = no cambiar (UpdateTenantInput usa int? nullable)
             var updateInput = new UpdateTenantInput(
-                Name:            _form.Name,
-                TargetUrl:       _form.TargetUrl,
-                WebhookSecret:   effectiveSecret,
-                SignatureScheme: _form.SignatureScheme,
-                SignatureHeader: _form.SignatureHeader,
-                IsActive:        _form.IsActive,
-                RetryPolicyId:   _form.RetryPolicyId,
-                TenantGroupId:   _form.TenantGroupId);
+                Name:                  _form.Name,
+                TargetUrl:             _form.TargetUrl,
+                WebhookSecret:         effectiveSecret,
+                SignatureScheme:       _form.SignatureScheme,
+                SignatureHeader:       _form.SignatureHeader,
+                IsActive:              _form.IsActive,
+                RetryPolicyId:         _form.RetryPolicyId,
+                TenantGroupId:         _form.TenantGroupId,
+                RuteoProveedorActivo:  _form.RuteoProveedorActivo,
+                ProveedorRuteoNombre:  _form.ProveedorRuteoNombre,
+                SucursalMetaKey:       _form.SucursalMetaKey,
+                SucursalMetaSeparador: _form.SucursalMetaSeparador);
 
             // Scope corto: el AppService (y su DbContext) se libera al salir del bloque.
             using var scope = ScopeFactory.CreateScope();
@@ -320,15 +358,19 @@ else
             }
 
             var input = new CreateTenantInput(
-                Name:            _form.Name,
-                Slug:            _form.Slug,
-                TargetUrl:       _form.TargetUrl,
-                WebhookSecret:   _form.WebhookSecret,
-                SignatureScheme: _form.SignatureScheme,
-                SignatureHeader: _form.SignatureHeader,
-                IsActive:        _form.IsActive,
-                RetryPolicyId:   _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
-                TenantGroupId:   _form.TenantGroupId == 0 ? null : _form.TenantGroupId);
+                Name:                  _form.Name,
+                Slug:                  _form.Slug,
+                TargetUrl:             _form.TargetUrl,
+                WebhookSecret:         _form.WebhookSecret,
+                SignatureScheme:       _form.SignatureScheme,
+                SignatureHeader:       _form.SignatureHeader,
+                IsActive:              _form.IsActive,
+                RetryPolicyId:         _form.RetryPolicyId == 0 ? null : _form.RetryPolicyId,
+                TenantGroupId:         _form.TenantGroupId == 0 ? null : _form.TenantGroupId,
+                RuteoProveedorActivo:  _form.RuteoProveedorActivo,
+                ProveedorRuteoNombre:  _form.ProveedorRuteoNombre,
+                SucursalMetaKey:       _form.SucursalMetaKey,
+                SucursalMetaSeparador: _form.SucursalMetaSeparador);
 
             // Scope corto: el AppService (y su DbContext) se libera al salir del bloque.
             using var scope = ScopeFactory.CreateScope();
@@ -409,5 +451,11 @@ else
         public string SignatureHeader { get; set; } = string.Empty;
         public int RetryPolicyId { get; set; }
         public int TenantGroupId { get; set; }
+
+        // ─── Ruteo por proveedor ─────────────────────────────────────────────
+        public bool RuteoProveedorActivo { get; set; } = false;
+        public string ProveedorRuteoNombre { get; set; } = string.Empty;
+        public string SucursalMetaKey { get; set; } = string.Empty;
+        public string SucursalMetaSeparador { get; set; } = string.Empty;
     }
 }

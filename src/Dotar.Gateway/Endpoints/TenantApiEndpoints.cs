@@ -65,15 +65,19 @@ public static class TenantApiEndpoints
         ILogger<Program> logger)
     {
         var input = new CreateTenantInput(
-            Name:            request.Name,
-            Slug:            request.Slug,
-            TargetUrl:       request.TargetUrl,
-            WebhookSecret:   request.WebhookSecret,
-            SignatureScheme: request.SignatureScheme,
-            SignatureHeader: request.SignatureHeader,
-            IsActive:        request.IsActive,
-            RetryPolicyId:   request.RetryPolicyId,
-            TenantGroupId:   request.TenantGroupId);
+            Name:                  request.Name,
+            Slug:                  request.Slug,
+            TargetUrl:             request.TargetUrl,
+            WebhookSecret:         request.WebhookSecret,
+            SignatureScheme:       request.SignatureScheme,
+            SignatureHeader:       request.SignatureHeader,
+            IsActive:              request.IsActive,
+            RetryPolicyId:         request.RetryPolicyId,
+            TenantGroupId:         request.TenantGroupId,
+            RuteoProveedorActivo:  request.RuteoProveedorActivo,
+            ProveedorRuteoNombre:  request.ProveedorRuteoNombre,
+            SucursalMetaKey:       request.SucursalMetaKey,
+            SucursalMetaSeparador: request.SucursalMetaSeparador);
 
         var result = await appService.CreateAsync(input);
 
@@ -91,16 +95,20 @@ public static class TenantApiEndpoints
 
         return Results.Created($"/api/tenants/{tenant.Slug}", new
         {
-            slug            = tenant.Slug,
-            name            = tenant.Name,
-            targetUrl       = tenant.TargetUrl,
-            webhookSecret   = tenant.WebhookSecret,
-            signatureScheme = tenant.SignatureScheme.ToString(),
-            signatureHeader = tenant.SignatureHeader,
-            isActive        = tenant.IsActive,
-            retryPolicyId   = tenant.RetryPolicyId,
-            tenantGroupId   = tenant.TenantGroupId,
-            createdAt       = tenant.CreatedAt
+            slug                  = tenant.Slug,
+            name                  = tenant.Name,
+            targetUrl             = tenant.TargetUrl,
+            webhookSecret         = tenant.WebhookSecret,
+            signatureScheme       = tenant.SignatureScheme.ToString(),
+            signatureHeader       = tenant.SignatureHeader,
+            isActive              = tenant.IsActive,
+            retryPolicyId         = tenant.RetryPolicyId,
+            tenantGroupId         = tenant.TenantGroupId,
+            createdAt             = tenant.CreatedAt,
+            ruteoProveedorActivo  = tenant.RuteoProveedorActivo,
+            proveedorRuteoNombre  = tenant.ProveedorRuteoNombre,
+            sucursalMetaKey       = tenant.SucursalMetaKey,
+            sucursalMetaSeparador = tenant.SucursalMetaSeparador
         });
     }
 
@@ -118,14 +126,18 @@ public static class TenantApiEndpoints
         ILogger<Program> logger)
     {
         var input = new UpdateTenantInput(
-            Name:            request.Name,
-            TargetUrl:       request.TargetUrl,
-            WebhookSecret:   request.WebhookSecret,
-            SignatureScheme: request.SignatureScheme,
-            SignatureHeader: request.SignatureHeader,
-            IsActive:        request.IsActive,
-            RetryPolicyId:   request.RetryPolicyId,
-            TenantGroupId:   request.TenantGroupId);
+            Name:                  request.Name,
+            TargetUrl:             request.TargetUrl,
+            WebhookSecret:         request.WebhookSecret,
+            SignatureScheme:       request.SignatureScheme,
+            SignatureHeader:       request.SignatureHeader,
+            IsActive:              request.IsActive,
+            RetryPolicyId:         request.RetryPolicyId,
+            TenantGroupId:         request.TenantGroupId,
+            RuteoProveedorActivo:  request.RuteoProveedorActivo,
+            ProveedorRuteoNombre:  request.ProveedorRuteoNombre,
+            SucursalMetaKey:       request.SucursalMetaKey,
+            SucursalMetaSeparador: request.SucursalMetaSeparador);
 
         var result = await appService.UpdateAsync(slug, input);
 
@@ -143,16 +155,20 @@ public static class TenantApiEndpoints
 
         return Results.Ok(new
         {
-            slug            = tenant.Slug,
-            name            = tenant.Name,
-            targetUrl       = tenant.TargetUrl,
-            signatureScheme = tenant.SignatureScheme.ToString(),
-            signatureHeader = tenant.SignatureHeader,
-            isActive        = tenant.IsActive,
-            retryPolicyId   = tenant.RetryPolicyId,
-            tenantGroupId   = tenant.TenantGroupId,
-            createdAt       = tenant.CreatedAt,
-            updatedAt       = tenant.UpdatedAt
+            slug                  = tenant.Slug,
+            name                  = tenant.Name,
+            targetUrl             = tenant.TargetUrl,
+            signatureScheme       = tenant.SignatureScheme.ToString(),
+            signatureHeader       = tenant.SignatureHeader,
+            isActive              = tenant.IsActive,
+            retryPolicyId         = tenant.RetryPolicyId,
+            tenantGroupId         = tenant.TenantGroupId,
+            createdAt             = tenant.CreatedAt,
+            updatedAt             = tenant.UpdatedAt,
+            ruteoProveedorActivo  = tenant.RuteoProveedorActivo,
+            proveedorRuteoNombre  = tenant.ProveedorRuteoNombre,
+            sucursalMetaKey       = tenant.SucursalMetaKey,
+            sucursalMetaSeparador = tenant.SucursalMetaSeparador
         });
     }
 
@@ -206,14 +222,18 @@ public static class TenantApiEndpoints
 
         return Results.Ok(new
         {
-            slug = tenant.Slug,
-            name = tenant.Name,
-            targetUrl = tenant.TargetUrl,
-            signatureScheme = tenant.SignatureScheme.ToString(),
-            signatureHeader = tenant.SignatureHeader,
-            isActive = tenant.IsActive,
-            createdAt = tenant.CreatedAt,
-            updatedAt = tenant.UpdatedAt
+            slug                  = tenant.Slug,
+            name                  = tenant.Name,
+            targetUrl             = tenant.TargetUrl,
+            signatureScheme       = tenant.SignatureScheme.ToString(),
+            signatureHeader       = tenant.SignatureHeader,
+            isActive              = tenant.IsActive,
+            createdAt             = tenant.CreatedAt,
+            updatedAt             = tenant.UpdatedAt,
+            ruteoProveedorActivo  = tenant.RuteoProveedorActivo,
+            proveedorRuteoNombre  = tenant.ProveedorRuteoNombre,
+            sucursalMetaKey       = tenant.SucursalMetaKey,
+            sucursalMetaSeparador = tenant.SucursalMetaSeparador
         });
     }
 
@@ -242,7 +262,10 @@ public static class TenantApiEndpoints
 
 }
 
-/// <summary>DTO para crear un tenant vía API.</summary>
+/// <summary>
+/// DTO para crear un tenant vía API.
+/// Los 4 campos de ruteo son opcionales al final para mantener compat con el ERP.
+/// </summary>
 public record CreateTenantRequest(
     string Name,
     string Slug,
@@ -252,11 +275,17 @@ public record CreateTenantRequest(
     string? SignatureHeader = null,
     bool? IsActive = null,
     int? RetryPolicyId = null,
-    int? TenantGroupId = null);
+    int? TenantGroupId = null,
+    bool? RuteoProveedorActivo = null,
+    string? ProveedorRuteoNombre = null,
+    string? SucursalMetaKey = null,
+    string? SucursalMetaSeparador = null);
 
 /// <summary>
 /// DTO para actualización parcial de un tenant. Todos los campos son opcionales:
 /// los que lleguen null no se modifican. Ver convenciones de limpieza en UpdateTenant.
+/// Los 4 campos de ruteo son opcionales; null = sin cambio.
+/// RuteoProveedorActivo=false limpia los 3 dependientes (semántica de apagado).
 /// </summary>
 public record UpdateTenantRequest(
     string? Name = null,
@@ -266,7 +295,11 @@ public record UpdateTenantRequest(
     string? SignatureHeader = null,
     bool? IsActive = null,
     int? RetryPolicyId = null,
-    int? TenantGroupId = null);
+    int? TenantGroupId = null,
+    bool? RuteoProveedorActivo = null,
+    string? ProveedorRuteoNombre = null,
+    string? SucursalMetaKey = null,
+    string? SucursalMetaSeparador = null);
 
 /// <summary>DTO para actualizar la URL de destino.</summary>
 public record UpdateTargetUrlRequest(string TargetUrl);

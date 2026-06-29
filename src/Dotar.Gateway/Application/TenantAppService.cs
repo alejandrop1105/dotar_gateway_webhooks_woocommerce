@@ -9,6 +9,7 @@ namespace Dotar.Gateway.Application;
 /// <summary>
 /// Datos para crear un tenant.
 /// Equivale a CreateTenantRequest pero sin acoplar a la capa HTTP.
+/// Los 4 campos de ruteo son opcionales al final del record para mantener compat con el ERP.
 /// </summary>
 public sealed record CreateTenantInput(
     string Name,
@@ -19,7 +20,11 @@ public sealed record CreateTenantInput(
     string? SignatureHeader = null,
     bool? IsActive = null,
     int? RetryPolicyId = null,
-    int? TenantGroupId = null);
+    int? TenantGroupId = null,
+    bool? RuteoProveedorActivo = null,
+    string? ProveedorRuteoNombre = null,
+    string? SucursalMetaKey = null,
+    string? SucursalMetaSeparador = null);
 
 /// <summary>
 /// Resultado de actualizar la URL de destino de un tenant.
@@ -32,6 +37,8 @@ public sealed record TargetUrlActualizada(Tenant Tenant, string PreviousUrl);
 /// Datos para actualización parcial de un tenant.
 /// Campos null = no se modifican.
 /// El slug NO está presente: es inmutable tras la creación (imposible cambiar por construcción del contrato).
+/// Los 4 campos de ruteo son opcionales; null significa "no tocar".
+/// RuteoProveedorActivo=false (explícito) fuerza la limpieza de los 3 campos dependientes.
 /// </summary>
 public sealed record UpdateTenantInput(
     string? Name = null,
@@ -41,12 +48,17 @@ public sealed record UpdateTenantInput(
     string? SignatureHeader = null,
     bool? IsActive = null,
     int? RetryPolicyId = null,
-    int? TenantGroupId = null);
+    int? TenantGroupId = null,
+    bool? RuteoProveedorActivo = null,
+    string? ProveedorRuteoNombre = null,
+    string? SucursalMetaKey = null,
+    string? SucursalMetaSeparador = null);
 
 /// <summary>
 /// Servicio de aplicación para operaciones de Tenant (Scoped).
 /// Centraliza toda la lógica de negocio de tenants: validación de slug, normalización,
-/// unicidad, validación de FKs, generación de secret, invalidación de caché.
+/// unicidad, validación de FKs, generación de secret, invalidación de caché,
+/// y validación de ruteo multi-sucursal.
 /// Los consumidores (endpoints Minimal API y componentes Blazor) delegan en este servicio.
 /// </summary>
 public sealed class TenantAppService
@@ -54,12 +66,27 @@ public sealed class TenantAppService
     private readonly GatewayDbContext _db;
     private readonly ITenantCacheService _cache;
     private readonly ILogger<TenantAppService> _logger;
+    private readonly IProveedorRuteoCatalog? _catalog;
 
+    /// <param name="db">Contexto de EF Core.</param>
+    /// <param name="cache">Servicio de caché de tenants.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="catalog">
+    /// Catálogo de proveedores de ruteo. Parámetro opcional para no romper
+    /// los tests existentes que construyen el servicio con 3 argumentos.
+    /// Si es null, el catálogo se considera vacío (ningún proveedor es válido).
+    /// </param>
     public TenantAppService(
         GatewayDbContext db,
         ITenantCacheService cache,
-        ILogger<TenantAppService> logger)
-        => (_db, _cache, _logger) = (db, cache, logger);
+        ILogger<TenantAppService> logger,
+        IProveedorRuteoCatalog? catalog = null)
+    {
+        _db      = db;
+        _cache   = cache;
+        _logger  = logger;
+        _catalog = catalog;
+    }
 
     /// <summary>
     /// Crea un tenant. Valida nombre/slug/url, formato de slug, unicidad y FKs.
@@ -113,20 +140,36 @@ public sealed class TenantAppService
         else
             secret = GenerateWebhookSecret();
 
+        // Calcular estado efectivo de ruteo para la creación.
+        // Si el ruteo está inactivo, los 3 dependientes se limpian (misma semántica que UpdateAsync).
+        var ruteoActivo = input.RuteoProveedorActivo ?? false;
+        var proveedorNombre       = ruteoActivo ? (input.ProveedorRuteoNombre  ?? string.Empty) : string.Empty;
+        var sucursalMetaKey       = ruteoActivo ? (input.SucursalMetaKey       ?? string.Empty) : string.Empty;
+        var sucursalMetaSeparador = ruteoActivo ? (input.SucursalMetaSeparador ?? string.Empty) : string.Empty;
+
+        // Validar ruteo sobre el estado efectivo final (solo si activo).
+        var validacionRuteo = ValidarRuteo(ruteoActivo, proveedorNombre, sucursalMetaKey);
+        if (validacionRuteo is not null)
+            return Result<Tenant>.Validation(validacionRuteo);
+
         var tenant = new Tenant
         {
-            Name            = input.Name.Trim(),
-            Slug            = slug,
-            WebhookSecret   = secret,
-            TargetUrl       = input.TargetUrl.Trim(),
-            IsActive        = input.IsActive ?? true,
-            SignatureScheme = scheme,
-            SignatureHeader = string.IsNullOrWhiteSpace(input.SignatureHeader)
-                              ? null
-                              : input.SignatureHeader!.Trim(),
-            RetryPolicyId  = input.RetryPolicyId,
-            TenantGroupId  = input.TenantGroupId,
-            CreatedAt      = DateTime.UtcNow
+            Name                  = input.Name.Trim(),
+            Slug                  = slug,
+            WebhookSecret         = secret,
+            TargetUrl             = input.TargetUrl.Trim(),
+            IsActive              = input.IsActive ?? true,
+            SignatureScheme       = scheme,
+            SignatureHeader       = string.IsNullOrWhiteSpace(input.SignatureHeader)
+                                    ? null
+                                    : input.SignatureHeader!.Trim(),
+            RetryPolicyId         = input.RetryPolicyId,
+            TenantGroupId         = input.TenantGroupId,
+            CreatedAt             = DateTime.UtcNow,
+            RuteoProveedorActivo  = ruteoActivo,
+            ProveedorRuteoNombre  = string.IsNullOrEmpty(proveedorNombre) ? null : proveedorNombre,
+            SucursalMetaKey       = string.IsNullOrEmpty(sucursalMetaKey) ? null : sucursalMetaKey,
+            SucursalMetaSeparador = string.IsNullOrEmpty(sucursalMetaSeparador) ? null : sucursalMetaSeparador
         };
 
         _db.Tenants.Add(tenant);
@@ -203,6 +246,59 @@ public sealed class TenantAppService
             else
                 tenant.TenantGroupId = input.TenantGroupId.Value;
         }
+
+        // ─── Ruteo: semántica update-parcial ─────────────────────────────────
+        // Si RuteoProveedorActivo es false explícito → limpiar los 3 dependientes.
+        // Si RuteoProveedorActivo es true → aplicar cambios de dependientes si se proveen.
+        // Si RuteoProveedorActivo es null → no tocar el flag ni los dependientes
+        //   (a menos que se provean individualmente).
+
+        if (input.RuteoProveedorActivo.HasValue)
+        {
+            if (!input.RuteoProveedorActivo.Value)
+            {
+                // Apagado explícito: limpiar el flag y los 3 dependientes.
+                tenant.RuteoProveedorActivo  = false;
+                tenant.ProveedorRuteoNombre  = null;
+                tenant.SucursalMetaKey       = null;
+                tenant.SucursalMetaSeparador = null;
+            }
+            else
+            {
+                // Activar: aplicar dependientes si se proveen (null = sin cambio).
+                tenant.RuteoProveedorActivo = true;
+                if (input.ProveedorRuteoNombre is not null)
+                    tenant.ProveedorRuteoNombre = string.IsNullOrEmpty(input.ProveedorRuteoNombre)
+                        ? null : input.ProveedorRuteoNombre;
+                if (input.SucursalMetaKey is not null)
+                    tenant.SucursalMetaKey = string.IsNullOrEmpty(input.SucursalMetaKey)
+                        ? null : input.SucursalMetaKey;
+                if (input.SucursalMetaSeparador is not null)
+                    tenant.SucursalMetaSeparador = string.IsNullOrEmpty(input.SucursalMetaSeparador)
+                        ? null : input.SucursalMetaSeparador;
+            }
+        }
+        else
+        {
+            // RuteoProveedorActivo null: actualizar dependientes individualmente si se proveen.
+            if (input.ProveedorRuteoNombre is not null)
+                tenant.ProveedorRuteoNombre = string.IsNullOrEmpty(input.ProveedorRuteoNombre)
+                    ? null : input.ProveedorRuteoNombre;
+            if (input.SucursalMetaKey is not null)
+                tenant.SucursalMetaKey = string.IsNullOrEmpty(input.SucursalMetaKey)
+                    ? null : input.SucursalMetaKey;
+            if (input.SucursalMetaSeparador is not null)
+                tenant.SucursalMetaSeparador = string.IsNullOrEmpty(input.SucursalMetaSeparador)
+                    ? null : input.SucursalMetaSeparador;
+        }
+
+        // Validar ruteo sobre el ESTADO EFECTIVO final del tenant (post-patch)
+        var validacionRuteoUpdate = ValidarRuteo(
+            tenant.RuteoProveedorActivo,
+            tenant.ProveedorRuteoNombre ?? string.Empty,
+            tenant.SucursalMetaKey ?? string.Empty);
+        if (validacionRuteoUpdate is not null)
+            return Result<Tenant>.Validation(validacionRuteoUpdate);
 
         tenant.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
@@ -294,6 +390,30 @@ public sealed class TenantAppService
     }
 
     // ─── Helpers privados ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Valida el estado efectivo de los campos de ruteo.
+    /// Se llama DESPUÉS de aplicar el input al estado del tenant (estado final).
+    /// Devuelve el mensaje de error si hay fallo, null si es válido.
+    /// </summary>
+    private string? ValidarRuteo(bool ruteoActivo, string proveedorNombre, string sucursalMetaKey)
+    {
+        if (!ruteoActivo)
+            return null; // Sin ruteo activo no hay nada que validar.
+
+        if (string.IsNullOrWhiteSpace(proveedorNombre))
+            return "El campo 'ProveedorRuteoNombre' es obligatorio cuando RuteoProveedorActivo está activo.";
+
+        if (string.IsNullOrWhiteSpace(sucursalMetaKey))
+            return "El campo 'SucursalMetaKey' es obligatorio cuando RuteoProveedorActivo está activo.";
+
+        // Validar que el proveedor esté en el catálogo (si el catálogo está inyectado).
+        var keysValidas = _catalog?.KeysValidas ?? [];
+        if (!keysValidas.Contains(proveedorNombre))
+            return $"El proveedor '{proveedorNombre}' no está registrado. Proveedores válidos: {string.Join(", ", keysValidas)}.";
+
+        return null;
+    }
 
     /// <summary>Genera un WebhookSecret como base64 de 32 bytes aleatorios.</summary>
     private static string GenerateWebhookSecret()
